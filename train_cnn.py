@@ -7,6 +7,8 @@ from cnn_model import CNNConfig
 import datetime
 import time
 import os
+import numpy as np
+from data.lwlrap import calculate_per_class_lwlrap
 
 
 def train():
@@ -33,18 +35,17 @@ def train():
         # 配置Tensorboard，重新训练时，请将tensorboard文件夹删除，不然图会覆盖
         # ====================================================================
         train_tensorboard_dir = 'tensorboard/cnn/train/'
-        test_tensorboard_dir = 'tensorboard/cnn/test/'
+        valid_tensorboard_dir = 'tensorboard/cnn/valid/'
         if not os.path.exists(train_tensorboard_dir):
             os.makedirs(train_tensorboard_dir)
-        if not os.path.exists(test_tensorboard_dir):
-            os.makedirs(test_tensorboard_dir)
+        if not os.path.exists(valid_tensorboard_dir):
+            os.makedirs(valid_tensorboard_dir)
 
         # 训练结果记录
-        log_file = open(test_tensorboard_dir+'/log.csv', mode='w', encoding='utf-8')
+        log_file = open(valid_tensorboard_dir+'/log.csv', mode='w', encoding='utf-8')
         log_file.write(','.join(['epoch', 'loss', 'precision', 'recall', 'f1_score']) + '\n')
 
-        merged_summary = tf.summary.merge([tf.summary.scalar('loss', cnn.loss),
-                                            tf.summary.scalar('accuracy', cnn.accuracy)])
+        merged_summary = tf.summary.merge([tf.summary.scalar('loss', cnn.loss)])
 
         train_summary_writer = tf.summary.FileWriter(train_tensorboard_dir, sess.graph)
         # =========================================================================
@@ -63,40 +64,44 @@ def train():
         def train_step(batch_x, batch_y, keep_prob=config.dropout_keep_prob):
             feed_dict = {
                 cnn.input_x: batch_x,
-                cnn.labels: batch_y,
+                cnn.input_y: batch_y,
                 cnn.dropout_keep_prob: keep_prob,
                 cnn.training: True
             }
             sess.run(train_op, feed_dict=feed_dict)
-            step, loss, accuracy, summery = sess.run(
-                [global_step, cnn.loss, cnn.accuracy, merged_summary],
-                feed_dict={cnn.input_x: batch_x,
-                cnn.labels: batch_y,
+            feed_dict = {cnn.input_x: batch_x,
+                cnn.input_y: batch_y,
                 cnn.dropout_keep_prob: 1.0,
-                cnn.training: False})
+                cnn.training: False}
+            step, loss, y_pred, summery = sess.run(
+                [global_step, cnn.loss, cnn.prediction, merged_summary],
+                feed_dict=feed_dict)
+            # lrap = metrics.label_ranking_average_precision_score(y_true=batch_y, y_score=y_pred)
+            per_class_lwlrap, weight_per_class = calculate_per_class_lwlrap(truth=batch_y, scores=y_pred)
+            mean_lwlrap = np.sum(per_class_lwlrap * weight_per_class)
             t = datetime.datetime.now().strftime('%m-%d %H:%M')
-            print('%s: epoch: %d, step: %d, loss: %f, accuracy: %f' % (t, epoch, step, loss, accuracy))
+            print('%s: epoch: %d, step: %d, loss: %f, lrap: %f' % (t, epoch, step, loss, mean_lwlrap))
             # 把结果写入Tensorboard中
             train_summary_writer.add_summary(summery, step)
 
         # 验证步骤
-        def test_step(next_test_element):
-            # 把test_loss和test_accuracy归0
+        def valid_step(next_valid_element):
+            # 把valid_loss和valid_accuracy归0
             y_true = []
             y_pred = []
-            test_loss = 0.0
-            test_accuracy = 0.0
-            test_precision = 0.0
-            test_recall = 0.0
-            test_f1_score = 0.0
+            valid_loss = 0.0
+            valid_accuracy = 0.0
+            valid_precision = 0.0
+            valid_recall = 0.0
+            valid_f1_score = 0.0
             i = 0
             while True:
                 try:
-                    lines = sess.run(next_test_element)
+                    lines = sess.run(next_valid_element)
                     batch_x, batch_y = cnn.convert_input(lines)
                     feed_dict = {
                         cnn.input_x: batch_x,
-                        cnn.labels: batch_y,
+                        cnn.input_y: batch_y,
                         cnn.dropout_keep_prob: 1.0,
                         cnn.training: False
                     }
@@ -104,39 +109,39 @@ def train():
                     # 多次验证，取loss和score均值
                     mean_loss = 0
                     mean_score = 0
-                    for i in range(config.multi_test_num):
+                    for i in range(config.multi_valid_num):
                         loss, score = sess.run([cnn.loss, cnn.score], feed_dict)
                         mean_loss += loss
                         mean_score += score
-                    mean_loss /= config.multi_test_num
-                    mean_score /= config.multi_test_num
+                    mean_loss /= config.multi_valid_num
+                    mean_score /= config.multi_valid_num
                     pred = sess.run(tf.argmax(mean_score, 1))
                     y_pred.extend(pred)
                     y_true.extend(batch_y)
-                    test_loss += mean_loss
+                    valid_loss += mean_loss
                     i += 1
                 except tf.errors.OutOfRangeError:
                     # 遍历完验证集，计算评估
-                    test_loss /= i
-                    test_accuracy = metrics.accuracy_score(y_true=y_true, y_pred=y_pred)
-                    test_precision = metrics.precision_score(y_true=y_true, y_pred=y_pred, average='weighted')
-                    test_recall = metrics.recall_score(y_true=y_true, y_pred=y_pred, average='weighted')
-                    test_f1_score = metrics.f1_score(y_true=y_true, y_pred=y_pred, average='weighted')
+                    valid_loss /= i
+                    valid_accuracy = metrics.accuracy_score(y_true=y_true, y_pred=y_pred)
+                    valid_precision = metrics.precision_score(y_true=y_true, y_pred=y_pred, average='weighted')
+                    valid_recall = metrics.recall_score(y_true=y_true, y_pred=y_pred, average='weighted')
+                    valid_f1_score = metrics.f1_score(y_true=y_true, y_pred=y_pred, average='weighted')
 
                     t = datetime.datetime.now().strftime('%m-%d %H:%M')
-                    log = '%s: epoch %d, testing loss: %0.6f, accuracy: %0.6f' % (
-                        t, epoch, test_loss, test_accuracy)
+                    log = '%s: epoch %d, validing loss: %0.6f, accuracy: %0.6f' % (
+                        t, epoch, valid_loss, valid_accuracy)
                     log = log + '\n' + ('precision: %0.6f, recall: %0.6f, f1_score: %0.6f' % (
-                        test_precision, test_recall, test_f1_score))
+                        valid_precision, valid_recall, valid_f1_score))
                     print(log)
-                    log_file.write(','.join([str(epoch), str(test_loss),str(test_precision), str(test_recall),
-                                             str(test_f1_score)]) + '\n')
+                    log_file.write(','.join([str(epoch), str(valid_loss),str(valid_precision), str(valid_recall),
+                                             str(valid_f1_score)]) + '\n')
                     time.sleep(3)
                     return
 
         print('Start training CNN...')
         sess.run(tf.global_variables_initializer())
-        train_init_op, test_init_op, next_train_element, next_test_element = cnn.prepare_data()
+        train_init_op, valid_init_op, next_train_element, next_valid_element = cnn.prepare_data()
         # Training loop
         for epoch in range(config.epoch_num):
             sess.run(train_init_op)
@@ -147,9 +152,9 @@ def train():
                     train_step(batch_x, batch_y, config.dropout_keep_prob)
                 except tf.errors.OutOfRangeError:
                     # 初始化验证集迭代器
-                    sess.run(test_init_op)
+                    #sess.run(valid_init_op)
                     # 计算验证集准确率
-                    test_step(next_test_element)
+                    # valid_step(next_valid_element)
                     break
         train_summary_writer.close()
         log_file.close()
