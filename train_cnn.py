@@ -137,7 +137,6 @@ def train():
             sess.run(train_init_op)
             while True:
                 try:
-
                     lines = sess.run(next_train_element)
                     batch_x, batch_y = cnn.convert_input(lines)
                     train_step(batch_x, batch_y, config.dropout_keep_prob)
