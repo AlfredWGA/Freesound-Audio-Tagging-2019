@@ -2,6 +2,7 @@
 import librosa
 import tensorflow as tf
 from tensorflow.data import TextLineDataset
+import PIL.Image as Image
 import numpy as np
 import librosa.display
 import matplotlib.pyplot as plt
@@ -11,10 +12,12 @@ from sklearn.preprocessing import normalize
 from tqdm import tqdm
 
 TRAIN_CURATED_DIR = 'train_curated'
-TRAIN_CURATED_NON_SILENT_DIR = TRAIN_CURATED_DIR + '_non_silent'
+TRAIN_CURATED_NON_SILENCE_DIR = TRAIN_CURATED_DIR + '_non_silence'
+TRAIN_CURATED_IMAGE_DIR = TRAIN_CURATED_DIR + '_image'
 
-TRAIN_CURATED_NON_SILENT_PATH = 'train_curated_non_silent.csv'
 TRAIN_CURATED_LABEL_PATH = 'train_curated.csv'
+TRAIN_CURATED_IMAGE_LABEL_PATH = 'train_curated_image.csv'
+TRAIN_CURATED_NUMPY_PATH = 'train_curated_np.npz'
 
 TRAIN_CURATED_NON_SILENT_SIZE = 25670
 
@@ -125,31 +128,99 @@ def truncate_features(vector, n_mel=64, chunk_size=128, r_threshold=32):
     return np.array(chunks), n_chunks
 
 
-def convert_wav_to_fixed_length_csv(dir_path, output_path, extractor):
+def convert_wav_to_fixed_length_melgram_image(wav_dir, output_dir, extractor):
     """
-    Convert all .wav files to mel-gram array into a .csv file.
-    And trucate feature vectors into fixed length.
-    :param dir_path: The dir containing all the .wav files.
-    :param output_path: Output path for .csv file.
+    把所有的.wav文件转换为定长的log-melgram图片
+    :param wav_dir: The dir containing all the .wav files.
+    :param output_dir: Output dir for image file.
     :param extractor: Instance of LogmelExtractor
     :return:
     """
-    wf = open(output_path, 'w', encoding='utf-8', newline='')
-    writer = csv.writer(wf)
-    writer.writerow(['fname', 'feature'])
-    for dirpath, dirnames, filenames in os.walk(dir_path):
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+
+    feature_vectors = []
+    fnames = []
+    for dirpath, dirnames, filenames in os.walk(wav_dir):
         for fname in filenames:
             x, sr = librosa.load(os.path.join(dirpath, fname), sr=None)
             melgram = extractor.extract(x)
             # melgram = normalize(melgram, axis=0)
             chunks, n_chunk = truncate_features(melgram, n_mel=extractor.n_mels)
             for i, chunk in enumerate(chunks):
-                feature = chunk.reshape(-1).tolist()
-                feature = [str(x) for x in feature]
-                feature = ' '.join(feature)
+                # 把chunk通过matplotlib转为log-melspectrogram图片
+                dpi = 100
+                fig = plt.figure(figsize=(img_width/dpi, img_height/dpi), dpi=dpi, frameon=False)
+                ax = plt.Axes(fig, [0., 0., 1., 1.])
+                ax.set_axis_off()
+                fig.add_axes(ax)
+                librosa.display.specshow(chunk,
+                                         y_axis='mel',
+                                         x_axis='s',
+                                         sr=extractor.sample_rate,
+                                         hop_length=extractor.hop_length)
+                plt.tight_layout()
+                chunk_name = '{}_{}.jpg'.format(fname[:-4], i)
+                fig.savefig(output_dir + '/' + chunk_name)
+                plt.close()
+
+
+def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_path, extractor):
+    """
+    把所有的.wav文件转换为定长的log-melgram图片
+    :param wav_dir: The dir containing all the .wav files.
+    :param output_dir: Output dir for .npz file.
+    :param extractor: Instance of LogmelExtractor
+    :return:
+    """
+
+    feature_vectors = []
+    fnames = []
+    for dirpath, dirnames, filenames in os.walk(wav_dir):
+        for fname in filenames:
+            x, sr = librosa.load(os.path.join(dirpath, fname), sr=None)
+            melgram = extractor.extract(x)
+            # melgram = normalize(melgram, axis=0)
+            chunks, n_chunk = truncate_features(melgram, n_mel=extractor.n_mels)
+            for i, chunk in enumerate(chunks):
                 chunk_name = '{}_{}.wav'.format(fname[:-4], i)
-                writer.writerow([chunk_name, feature])
-    wf.close()
+                feature_vectors.append(chunk)
+                fnames.append(chunk_name)
+
+    feature_vectors = np.stack(feature_vectors)
+    fnames = np.asarray(fnames)
+
+    np.savez(output_path, fname=fnames, log_melgram=feature_vectors)
+    print('Save numpy arrays to {}'.format(output_path))
+
+def generate_image_csv(image_dir, csv_path):
+    """
+    把图片的文件名及标签转为csv
+
+    :param image_dir:
+    :param csv_path:
+    :return:
+    """
+    # 读取标签，转换成{fname, label}的键值对
+    labels = {}
+    with open(TRAIN_CURATED_LABEL_PATH, 'r', encoding='utf-8') as f:
+        f.readline()  # 跳过标题
+        while True:
+            line = f.readline()
+            if line == '':
+                break
+            line = line.strip()
+            fname = line[:12]
+            label = line[13:].strip("\"")
+            labels[fname] = label
+
+    f = open(csv_path, 'w', encoding='utf-8', newline='')
+    writer = csv.writer(f)
+    for dirpath, dirnames, filenames in os.walk(image_dir):
+        for fname in tqdm(filenames):
+            label = labels[fname[:8] + '.wav']
+            writer.writerow([fname, label])
+    f.close()
 
 
 def count_lines(path):
@@ -229,24 +300,33 @@ class LogmelExtractor(object):
 
 
 if __name__ == '__main__':
-    y, sr = librosa.load('./train_curated/00c4e82c.wav', sr=None)
+    # y, sr = librosa.load('./train_curated/00c4e82c.wav', sr=None)
     extractor = LogmelExtractor(sample_rate=32000, n_window=1024, hop_length=512, n_mels=64)
-    melgram = extractor.extract(y)
-    chunks, n_chunk = truncate_features(melgram)
-    for i in range(5):
-        chunk = normalize(chunks[i])
-        print(chunk.shape)
-        plt.figure(figsize=(10, 4))
-        librosa.display.specshow(chunk,
-                                 y_axis='mel',
-                                 x_axis='s',
-                                 sr=extractor.sample_rate,
-                                 hop_length=extractor.hop_length)
-        plt.colorbar(format='%+2.5f dB')
-        plt.title('Mel spectrogram')
-        plt.tight_layout()
-        plt.axis('off')
-        plt.show()
-    # convert_wav_to_fixed_length_csv(TRAIN_CURATED_NON_SILENT_DIR, 'train_curated_non_silent.csv', extractor)
-    pass
+    # melgram = extractor.extract(y)
+    # chunks, n_chunk = truncate_features(melgram)
+    # for i in range(1):
+    #     chunk = normalize(chunks[i])
+    #     print(chunk.shape)
+    #     fig = plt.figure(figsize=(1.28, 0.64), dpi=100, frameon=False)
+    #     ax = plt.Axes(fig, [0., 0., 1., 1.])
+    #     ax.set_axis_off()
+    #     fig.add_axes(ax)
+    #     librosa.display.specshow(chunk,
+    #                              y_axis='mel',
+    #                              x_axis='s',
+    #                              sr=extractor.sample_rate,
+    #                              hop_length=extractor.hop_length)
+    #     plt.tight_layout()
+    #     # plt.show()
+    #     fig.savefig(str(i))
+    #     # Now we can save it to a numpy array.
+    #     # print(fig.canvas.tostring_rgb())
+    #     # data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    #     # data = data.reshape([w, h, 3])
+    #     # print(data.shape)
+    # convert_wav_to_fixed_length_melgram_npz(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_NUMPY_PATH, extractor)
+    # generate_image_csv(TRAIN_CURATED_IMAGE_DIR, TRAIN_CURATED_IMAGE_LABEL_PATH)
+    arrays = np.load(TRAIN_CURATED_NUMPY_PATH)
+    for item in arrays.items():
+        print(item[1])
 

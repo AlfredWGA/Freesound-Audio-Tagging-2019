@@ -115,7 +115,12 @@ dmypy.json
 
 # datasete
 train_curated/
-train_curated_non_silent/
+train_curated_non_silence/
+train_curated_image/
 
 # Training/ validation log
 tensorboard/
+
+# Checkpoints
+checkpoints/
+

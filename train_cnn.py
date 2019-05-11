@@ -8,7 +8,7 @@ import datetime
 import time
 import os
 import numpy as np
-from data.lwlrap import calculate_per_class_lwlrap
+from data import lwlrap
 
 
 def train():
@@ -20,7 +20,7 @@ def train():
     with tf.Session(config=config) as sess:
         config = CNNConfig()
         cnn = CNN(config)
-        cnn.setVGG16()
+        cnn.setVGG13()
 
         print('Setting Tensorboard and Saver...')
         # 设置Saver和checkpoint来保存模型
@@ -58,7 +58,8 @@ def train():
         # 保证Batch normalization的执行
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):  # 保证train_op在update_ops执行之后再执行。
-            train_op = tf.train.AdamOptimizer(learning_rate).minimize(cnn.loss, global_step)
+            # train_op = tf.train.AdamOptimizer(learning_rate).minimize(cnn.loss, global_step)
+            train_op = tf.train.AdadeltaOptimizer(learning_rate).minimize(cnn.loss, global_step)
 
         # 训练步骤
         def train_step(batch_x, batch_y, keep_prob=config.dropout_keep_prob):
@@ -76,11 +77,11 @@ def train():
             step, loss, y_pred, summery = sess.run(
                 [global_step, cnn.loss, cnn.prediction, merged_summary],
                 feed_dict=feed_dict)
-            # lrap = metrics.label_ranking_average_precision_score(y_true=batch_y, y_score=y_pred)
-            per_class_lwlrap, weight_per_class = calculate_per_class_lwlrap(truth=batch_y, scores=y_pred)
-            mean_lwlrap = np.sum(per_class_lwlrap * weight_per_class)
+            lrap = lwlrap.calculate_overall_lwlrap_sklearn(truth=batch_y, scores=y_pred)
+            # per_class_lwlrap, weight_per_class = calculate_per_class_lwlrap(truth=batch_y, scores=y_pred)
+            # mean_lwlrap = np.sum(per_class_lwlrap * weight_per_class)
             t = datetime.datetime.now().strftime('%m-%d %H:%M')
-            print('%s: epoch: %d, step: %d, loss: %f, lrap: %f' % (t, epoch, step, loss, mean_lwlrap))
+            print('%s: epoch: %d, step: %d, loss: %f, lwlrap: %f' % (t, epoch, step, loss, lrap))
             # 把结果写入Tensorboard中
             train_summary_writer.add_summary(summery, step)
 
@@ -90,10 +91,6 @@ def train():
             y_true = []
             y_pred = []
             valid_loss = 0.0
-            valid_accuracy = 0.0
-            valid_precision = 0.0
-            valid_recall = 0.0
-            valid_f1_score = 0.0
             i = 0
             while True:
                 try:
@@ -106,36 +103,29 @@ def train():
                         cnn.training: False
                     }
                     # loss, pred, true = sess.run([cnn.loss, cnn.prediction, cnn.labels], feed_dict)
-                    # 多次验证，取loss和score均值
+                    # 多次验证，取loss和prediction均值
                     mean_loss = 0
-                    mean_score = 0
+                    mean_pred = 0
                     for i in range(config.multi_valid_num):
-                        loss, score = sess.run([cnn.loss, cnn.score], feed_dict)
+                        loss, pred = sess.run([cnn.loss, cnn.prediction], feed_dict)
                         mean_loss += loss
-                        mean_score += score
+                        mean_pred += pred
                     mean_loss /= config.multi_valid_num
-                    mean_score /= config.multi_valid_num
-                    pred = sess.run(tf.argmax(mean_score, 1))
-                    y_pred.extend(pred)
+                    mean_pred /= config.multi_valid_num
+                    y_pred.extend(mean_pred)
                     y_true.extend(batch_y)
                     valid_loss += mean_loss
                     i += 1
                 except tf.errors.OutOfRangeError:
                     # 遍历完验证集，计算评估
                     valid_loss /= i
-                    valid_accuracy = metrics.accuracy_score(y_true=y_true, y_pred=y_pred)
-                    valid_precision = metrics.precision_score(y_true=y_true, y_pred=y_pred, average='weighted')
-                    valid_recall = metrics.recall_score(y_true=y_true, y_pred=y_pred, average='weighted')
-                    valid_f1_score = metrics.f1_score(y_true=y_true, y_pred=y_pred, average='weighted')
-
+                    y_true = np.asarray(y_true)
+                    y_pred = np.asarray(y_pred)
+                    lrap = lwlrap.calculate_overall_lwlrap_sklearn(truth=y_true, scores=y_pred)
                     t = datetime.datetime.now().strftime('%m-%d %H:%M')
-                    log = '%s: epoch %d, validing loss: %0.6f, accuracy: %0.6f' % (
-                        t, epoch, valid_loss, valid_accuracy)
-                    log = log + '\n' + ('precision: %0.6f, recall: %0.6f, f1_score: %0.6f' % (
-                        valid_precision, valid_recall, valid_f1_score))
+                    log = '%s: epoch %d, validation loss: %0.6f, lwlrap: %0.6f' % (t, epoch, valid_loss, lrap)
                     print(log)
-                    log_file.write(','.join([str(epoch), str(valid_loss),str(valid_precision), str(valid_recall),
-                                             str(valid_f1_score)]) + '\n')
+                    log_file.write(log + '\n')
                     time.sleep(3)
                     return
 
@@ -147,14 +137,15 @@ def train():
             sess.run(train_init_op)
             while True:
                 try:
+
                     lines = sess.run(next_train_element)
                     batch_x, batch_y = cnn.convert_input(lines)
                     train_step(batch_x, batch_y, config.dropout_keep_prob)
                 except tf.errors.OutOfRangeError:
                     # 初始化验证集迭代器
-                    #sess.run(valid_init_op)
+                    sess.run(valid_init_op)
                     # 计算验证集准确率
-                    # valid_step(next_valid_element)
+                    valid_step(next_valid_element)
                     break
         train_summary_writer.close()
         log_file.close()
