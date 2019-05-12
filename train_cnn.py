@@ -68,12 +68,8 @@ def train():
                 cnn.dropout_keep_prob: keep_prob,
                 cnn.training: True
             }
-            sess.run(train_op, feed_dict=feed_dict)
-            feed_dict = {
-                cnn.dropout_keep_prob: 1.0,
-                cnn.training: False}
-            step, loss, y_pred, y_true, summery = sess.run(
-                [global_step, cnn.loss, cnn.prediction, cnn.input_y, merged_summary],
+            _, step, loss, y_pred, y_true, summery = sess.run(
+                [train_op, global_step, cnn.loss, cnn.prediction, cnn.input_y, merged_summary],
                 feed_dict=feed_dict)
             # 计算lwlrap
             lrap = lwlrap.calculate_overall_lwlrap_sklearn(truth=y_true, scores=y_pred)

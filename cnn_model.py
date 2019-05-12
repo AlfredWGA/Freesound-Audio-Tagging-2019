@@ -15,13 +15,13 @@ class CNNConfig(object):
     """
     def __init__(self):
         self.class_num = feature.class_num       # 输出类别的数目
-        self.img_width = feature.img_width       # 图像的尺寸
         self.img_height = feature.img_height
-        self.use_img_input = False        # 是否使用图片作为输入，False使用原始的feature vector
+        self.img_width = feature.img_width       # 图像的尺寸
+        self.use_img_input = True        # 是否使用图片作为输入，False使用原始的feature vector
         self.dropout_keep_prob = 0.5     # dropout保留比例
         self.learning_rate = 1e-3   # 学习率
         self.batch_size = 128         # 批大小
-        self.epoch_num = 250      # 总迭代轮次
+        self.epoch_num = 300      # 总迭代轮次
 
 
 class CNN(object):
@@ -38,8 +38,6 @@ class CNN(object):
 
     def _set_input(self):
         # Input layer
-        # self.input_x = tf.placeholder(tf.float32, [None, self.img_width, self.img_height, self.input_x_dim], name="input_x")
-        # self.input_y = tf.placeholder(tf.float32, [None, self.class_num], name="labels")
         # 训练时batch_normalization的Training参数应为True,
         # 验证或测试时应为False
         self.dropout_keep_prob = tf.placeholder(tf.float32, name="dropout_keep_prob")
@@ -170,14 +168,14 @@ class CNN(object):
                 self.fname2label[fname] = label
         # =======================================================================
         total_size = feature.TRAIN_CURATED_NON_SILENT_SIZE
-        train_size = int(total_size*0.7)
+        train_size = int(total_size * 0.7)
 
         print('Load and shuffle dataset...')
 
         # 读取图片和label的map函数
         def read_image(*row):
             image = tf.read_file('data/' + feature.TRAIN_CURATED_IMAGE_DIR + '/' + row[0])
-            image = tf.reshape(tf.image.decode_jpeg(image), [self.img_width, self.img_height, self.input_x_dim])
+            image = tf.reshape(tf.image.decode_jpeg(image), [self.img_height, self.img_width, self.input_x_dim])
             image = tf.cast(image, tf.float32)
             label = tf.cast(row[1:], tf.float32)
             return image, label
@@ -187,8 +185,9 @@ class CNN(object):
             print('Using image input.')
             print('Loading data from {}'.format(path))
             dataset = tf.data.experimental.CsvDataset(path,
-                                                      record_defaults=[tf.string]+[tf.int32 for _ in range(self.class_num)])
-            dataset = dataset.map(read_image)
+                                                      record_defaults=[tf.string]+[tf.int32 for _ in range(self.class_num)],
+                                                      header=True)
+            dataset = dataset.map(read_image).shuffle(int(total_size*0.5))
         else:
             # 读取.npz文件
             path = 'data/' + feature.TRAIN_CURATED_NUMPY_PATH
@@ -200,18 +199,16 @@ class CNN(object):
 
             self.features_placeholder = tf.placeholder(tf.float32, self.features.shape)
             self.labels_placeholder = tf.placeholder(tf.float32, self.labels.shape)
-
-            # dataset = TextLineDataset('data/' + feature.TRAIN_CURATED_TRUNCATED_PATH).skip(1).shuffle(int(total_size*0.3))
-            dataset = tf.data.Dataset.from_tensor_slices((self.features_placeholder, self.labels_placeholder))
+            dataset = tf.data.Dataset.from_tensor_slices(
+                (self.features_placeholder, self.labels_placeholder)).shuffle(int(total_size*0.5))
 
         train_dataset = dataset.take(train_size).batch(self.batch_size)
         valid_dataset = dataset.skip(train_size).batch(self.batch_size)
-
         # Create a reinitializable iterator
         iterator = tf.data.Iterator.from_structure(train_dataset.output_types,
                                                    train_dataset.output_shapes)
 
-        train_init_op =  iterator.make_initializer(train_dataset)
+        train_init_op = iterator.make_initializer(train_dataset)
         valid_init_op = iterator.make_initializer(valid_dataset)
 
         self.next_element = iterator.get_next()

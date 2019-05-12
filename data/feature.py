@@ -22,8 +22,8 @@ TRAIN_CURATED_TRUNCATED_PATH = 'train_curated_truncated.csv'
 
 TRAIN_CURATED_NON_SILENT_SIZE = 25670
 
-img_height = 64
-img_width = 128
+img_height = 128
+img_width = 64
 
 classes = ['Accelerating_and_revving_and_vroom', 'Accordion', 'Acoustic_guitar', 'Applause', 'Bark',
             'Bass_drum', 'Bass_guitar', 'Bathtub_(filling_or_washing)', 'Bicycle_bell', 'Burping_and_eructation',
@@ -142,7 +142,7 @@ def convert_wav_to_fixed_length_melgram_image(wav_dir, output_dir, extractor):
         os.mkdir(output_dir)
 
     for dirpath, dirnames, filenames in os.walk(wav_dir):
-        for fname in filenames:
+        for fname in tqdm(filenames):
             x, sr = librosa.load(os.path.join(dirpath, fname), sr=None)
             melgram = extractor.extract(x)
             # melgram = normalize(melgram, axis=0)
@@ -150,16 +150,17 @@ def convert_wav_to_fixed_length_melgram_image(wav_dir, output_dir, extractor):
             for i, chunk in enumerate(chunks):
                 # 把chunk通过matplotlib转为log-melspectrogram图片
                 dpi = 100
-                fig = plt.figure(figsize=(img_width/dpi, img_height/dpi), dpi=dpi, frameon=False)
+                fig = plt.figure(figsize=(img_height/dpi, img_width/dpi), dpi=dpi, frameon=False)
                 ax = plt.Axes(fig, [0., 0., 1., 1.])
                 ax.set_axis_off()
                 fig.add_axes(ax)
                 librosa.display.specshow(chunk,
-                                         y_axis='mel',
-                                         x_axis='s',
+                                         x_axis='mel',
+                                         y_axis='s',
                                          sr=extractor.sample_rate,
                                          hop_length=extractor.hop_length)
                 plt.tight_layout()
+                # plt.show()
                 chunk_name = '{}_{}.jpg'.format(fname[:-4], i)
                 fig.savefig(output_dir + '/' + chunk_name)
                 plt.close()
@@ -210,7 +211,7 @@ def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_path, extractor):
     np.savez(output_path, labels=labels, log_melgram=feature_vectors)
     print('Save numpy arrays to {}'.format(output_path))
 
-
+'''
 def convert_wav_to_fixed_length_melgram_csv(wav_dir, output_path, extractor):
     """
     把所有的.wav文件转换为定长的log-melgram数组，以字符串形式存入.csv文件中
@@ -238,7 +239,7 @@ def convert_wav_to_fixed_length_melgram_csv(wav_dir, output_path, extractor):
                 writer.writerow(row)
 
     print('Save csv file to {}'.format(output_path))
-
+'''
 
 def generate_one_hot_label_csv(data_dir, csv_path):
     """
@@ -263,6 +264,7 @@ def generate_one_hot_label_csv(data_dir, csv_path):
 
     f = open(csv_path, 'w', encoding='utf-8', newline='')
     writer = csv.writer(f)
+    writer.writerow(['fname']+classes)
     for dirpath, dirnames, filenames in os.walk(data_dir):
         for fname in tqdm(filenames):
             labels = fname2label[fname[:8] + '.wav'].strip('\"').split(',')
@@ -387,7 +389,10 @@ if __name__ == '__main__':
     #     # data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
     #     # data = data.reshape([w, h, 3])
     #     # print(data.shape)
-    # convert_wav_to_fixed_length_melgram_csv(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_TRUNCATED_PATH, extractor)
+    # convert_wav_to_fixed_length_melgram_image(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_IMAGE_DIR, extractor)
     # convert_wav_to_fixed_length_melgram_npz(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_NUMPY_PATH, extractor)
     # generate_one_hot_label_csv(TRAIN_CURATED_IMAGE_DIR, TRAIN_CURATED_IMAGE_LABEL_PATH)
+    # data = np.load(TRAIN_CURATED_NUMPY_PATH)
+    # for item in data.items():
+    #     print(item[1].shape)
     pass
