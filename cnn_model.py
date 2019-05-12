@@ -17,7 +17,7 @@ class CNNConfig(object):
         self.class_num = feature.class_num       # 输出类别的数目
         self.img_height = feature.img_height
         self.img_width = feature.img_width       # 图像的尺寸
-        self.use_img_input = True        # 是否使用图片作为输入，False使用原始的feature vector
+        self.use_img_input = False        # 是否使用图片作为输入，False使用原始的feature vector
         self.dropout_keep_prob = 0.5     # dropout保留比例
         self.learning_rate = 1e-3   # 学习率
         self.batch_size = 128         # 批大小
@@ -197,8 +197,8 @@ class CNN(object):
             self.features = data['log_melgram']
             self.labels = data['labels']
 
-            self.features_placeholder = tf.placeholder(tf.float32, self.features.shape)
-            self.labels_placeholder = tf.placeholder(tf.float32, self.labels.shape)
+            self.features_placeholder = tf.placeholder(tf.float32, self.features.shape, name='features')
+            self.labels_placeholder = tf.placeholder(tf.float32, self.labels.shape, name='labels')
             dataset = tf.data.Dataset.from_tensor_slices(
                 (self.features_placeholder, self.labels_placeholder)).shuffle(int(total_size*0.5))
 

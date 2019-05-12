@@ -26,8 +26,8 @@ def train():
         print('Setting Tensorboard and Saver...')
         # 设置Saver和checkpoint来保存模型
         # ===================================================
-        checkpoint_dir = os.path.join(os.path.abspath("checkpoints"), "cnn")
-        checkpoint_prefix = os.path.join(checkpoint_dir)
+        checkpoint_dir = os.path.abspath("checkpoints")
+        checkpoint_prefix = checkpoint_dir + '/cnn'
         if not os.path.exists(checkpoint_dir):
             os.makedirs(checkpoint_dir)
         saver = tf.train.Saver(tf.global_variables())
@@ -35,8 +35,8 @@ def train():
 
         # 配置Tensorboard，重新训练时，请将tensorboard文件夹删除，不然图会覆盖
         # ====================================================================
-        train_tensorboard_dir = 'tensorboard/cnn/train/'
-        valid_tensorboard_dir = 'tensorboard/cnn/valid/'
+        train_tensorboard_dir = 'tensorboard/train/'
+        valid_tensorboard_dir = 'tensorboard/valid/'
         if not os.path.exists(train_tensorboard_dir):
             os.makedirs(train_tensorboard_dir)
         if not os.path.exists(valid_tensorboard_dir):
@@ -44,7 +44,7 @@ def train():
 
         # 训练结果记录
         log_file = open(valid_tensorboard_dir+'/log.csv', mode='w', encoding='utf-8')
-        log_file.write(','.join(['epoch', 'loss', 'precision', 'recall', 'f1_score']) + '\n')
+        log_file.write(','.join(['epoch', 'loss', 'lwlrap']) + '\n')
 
         merged_summary = tf.summary.merge([tf.summary.scalar('loss', cnn.loss)])
 
@@ -134,6 +134,13 @@ def train():
                     # 计算验证集准确率
                     valid_step()
                     break
+                except KeyboardInterrupt:
+                    train_summary_writer.close()
+                    log_file.close()
+                    # 训练完成后保存参数
+                    path = saver.save(sess, checkpoint_prefix, global_step=global_step)
+                    print("Saved model checkpoint to {}\n".format(path))
+                    return
         train_summary_writer.close()
         log_file.close()
         # 训练完成后保存参数
