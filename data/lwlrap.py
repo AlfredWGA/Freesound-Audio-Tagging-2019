@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 import sklearn.metrics as metrics
 
+
 def _one_sample_positive_class_precisions(scores, truth):
     """Calculate precisions for each true class for a single sample.
 

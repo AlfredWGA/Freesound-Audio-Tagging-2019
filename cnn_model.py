@@ -19,7 +19,7 @@ class CNNConfig(object):
         self.img_width = feature.img_width       # 图像的尺寸
         self.use_img_input = False        # 是否使用图片作为输入，False使用原始的feature vector
         self.dropout_keep_prob = 0.5     # dropout保留比例
-        self.learning_rate = 1e-3   # 学习率
+        self.learning_rate = 5e-4   # 学习率
         self.batch_size = 128         # 批大小
         self.epoch_num = 300      # 总迭代轮次
 
@@ -42,10 +42,8 @@ class CNN(object):
         # 验证或测试时应为False
         self.dropout_keep_prob = tf.placeholder(tf.float32, name="dropout_keep_prob")
         self.training = tf.placeholder(tf.bool, name='training')
-        self.input_x = self.next_element[0]
+        self.input_x = tf.reshape(self.next_element[0], [-1, self.img_height, self.img_width, self.input_x_dim], name='input_x')
         self.input_y = self.next_element[1]
-        if not self.use_img_input:
-            self.input_x = tf.expand_dims(self.input_x, -1)
 
     def _set_loss(self):
         # Loss function
@@ -77,7 +75,7 @@ class CNN(object):
             kernel_initializer=tf.contrib.layers.xavier_initializer(),
             bias_initializer=tf.initializers.constant(0.0),
         )
-        # output = tf.layers.batch_normalization(output, training=training)
+        output = tf.layers.batch_normalization(output, training=training)
         return tf.nn.relu(output)
 
     def _maxpool_2x2(self, input):
@@ -175,7 +173,7 @@ class CNN(object):
         # 读取图片和label的map函数
         def read_image(*row):
             image = tf.read_file('data/' + feature.TRAIN_CURATED_IMAGE_DIR + '/' + row[0])
-            image = tf.reshape(tf.image.decode_jpeg(image), [self.img_height, self.img_width, self.input_x_dim])
+            image = tf.image.decode_jpeg(image)
             image = tf.cast(image, tf.float32)
             label = tf.cast(row[1:], tf.float32)
             return image, label
@@ -211,7 +209,7 @@ class CNN(object):
         train_init_op = iterator.make_initializer(train_dataset)
         valid_init_op = iterator.make_initializer(valid_dataset)
 
-        self.next_element = iterator.get_next()
+        self.next_element = iterator.get_next(name='next_element')
 
         return train_init_op, valid_init_op
         # ==============================================================

@@ -59,8 +59,7 @@ def train():
         # 保证Batch normalization的执行
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):  # 保证train_op在update_ops执行之后再执行。
-            # train_op = tf.train.AdamOptimizer(learning_rate).minimize(cnn.loss, global_step)
-            train_op = tf.train.AdadeltaOptimizer(learning_rate).minimize(cnn.loss, global_step)
+            train_op = tf.train.AdamOptimizer(learning_rate).minimize(cnn.loss, global_step)
 
         # 训练步骤
         def train_step(keep_prob=config.dropout_keep_prob):
