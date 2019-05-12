@@ -365,30 +365,7 @@ class LogmelExtractor(object):
 
 
 if __name__ == '__main__':
-    # y, sr = librosa.load('./train_curated/00c4e82c.wav', sr=None)
     extractor = LogmelExtractor(sample_rate=32000, n_window=1024, hop_length=512, n_mels=64)
-    # melgram = extractor.extract(y)
-    # chunks, n_chunk = truncate_features(melgram)
-    # for i in range(1):
-    #     chunk = normalize(chunks[i])
-    #     print(chunk.shape)
-    #     fig = plt.figure(figsize=(1.28, 0.64), dpi=100, frameon=False)
-    #     ax = plt.Axes(fig, [0., 0., 1., 1.])
-    #     ax.set_axis_off()
-    #     fig.add_axes(ax)
-    #     librosa.display.specshow(chunk,
-    #                              y_axis='mel',
-    #                              x_axis='s',
-    #                              sr=extractor.sample_rate,
-    #                              hop_length=extractor.hop_length)
-    #     plt.tight_layout()
-    #     # plt.show()
-    #     fig.savefig(str(i))
-    #     # Now we can save it to a numpy array.
-    #     # print(fig.canvas.tostring_rgb())
-    #     # data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-    #     # data = data.reshape([w, h, 3])
-    #     # print(data.shape)
     # convert_wav_to_fixed_length_melgram_image(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_IMAGE_DIR, extractor)
     # convert_wav_to_fixed_length_melgram_npz(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_NUMPY_PATH, extractor)
     # generate_one_hot_label_csv(TRAIN_CURATED_IMAGE_DIR, TRAIN_CURATED_IMAGE_LABEL_PATH)
