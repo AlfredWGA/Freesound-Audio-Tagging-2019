@@ -167,31 +167,47 @@ def convert_wav_to_fixed_length_melgram_image(wav_dir, output_dir, extractor):
 
 def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_path, extractor):
     """
-    把所有的.wav文件转换为定长的log-melgram数组，存入.npz
+    把所有的.wav文件转换为定长的log-melgram数组，将数组和one hot标签存入.npz
     :param wav_dir: The dir containing all the .wav files.
     :param output_dir: Output dir for .npz file.
     :param extractor: Instance of LogmelExtractor
     :return:
     """
 
+    # 读取标签，转换成{fname, label}的键值对
+    fname2label = {}
+    with open(TRAIN_CURATED_LABEL_PATH, 'r', encoding='utf-8') as f:
+        f.readline()  # 跳过标题
+        while True:
+            line = f.readline()
+            if line == '':
+                break
+            line = line.strip()
+            fname = line[:12]
+            label = line[13:].strip("\"")
+            fname2label[fname] = label
+
     feature_vectors = []
-    fnames = []
+    labels = []
 
     for dirpath, dirnames, filenames in os.walk(wav_dir):
-        for fname in filenames:
+        for fname in tqdm(filenames):
             x, sr = librosa.load(os.path.join(dirpath, fname), sr=None)
             melgram = extractor.extract(x)
             # melgram = normalize(melgram, axis=0)
             chunks, n_chunk = truncate_features(melgram, n_mel=extractor.n_mels)
             for i, chunk in enumerate(chunks):
-                chunk_name = '{}_{}.wav'.format(fname[:-4], i)
+                # chunk_name = '{}_{}.wav'.format(fname[:-4], i)
+                # 处理多个标签的情况
+                label = fname2label[fname[:8] + '.wav'].strip('\"').split(',')
+                one_hot_label = to_one_hot(label)
                 feature_vectors.append(chunk)
-                fnames.append(chunk_name)
+                labels.append(one_hot_label)
 
     feature_vectors = np.stack(feature_vectors)
-    fnames = np.asarray(fnames)
+    labels = np.stack(labels)
 
-    np.savez(output_path, fname=fnames, log_melgram=feature_vectors)
+    np.savez(output_path, labels=labels, log_melgram=feature_vectors)
     print('Save numpy arrays to {}'.format(output_path))
 
 
@@ -205,7 +221,7 @@ def convert_wav_to_fixed_length_melgram_csv(wav_dir, output_path, extractor):
     :return:
     """
 
-    wf = open(output_path, 'w', encoding='utf-8')
+    wf = open(output_path, 'w', encoding='utf-8', newline='')
     writer = csv.writer(wf)
 
     for dirpath, dirnames, filenames in os.walk(wav_dir):
@@ -216,13 +232,15 @@ def convert_wav_to_fixed_length_melgram_csv(wav_dir, output_path, extractor):
             chunks, n_chunk = truncate_features(melgram, n_mel=extractor.n_mels)
             for i, chunk in enumerate(chunks):
                 chunk_name = '{}_{}.wav'.format(fname[:-4], i)
-                chunk_string = ' '.join([str(x) for x in chunk.reshape([-1]).tolist()])
-                writer.writerow([chunk_name, chunk_string])
+                row = [chunk_name]
+                chunk_feature = [x for x in chunk.reshape([-1])]
+                row.extend(chunk_feature)
+                writer.writerow(row)
 
     print('Save csv file to {}'.format(output_path))
 
 
-def generate_label_csv(data_dir, csv_path):
+def generate_one_hot_label_csv(data_dir, csv_path):
     """
     把数据的文件名及标签转为[fname, label]的csv文件
 
@@ -231,7 +249,7 @@ def generate_label_csv(data_dir, csv_path):
     :return:
     """
     # 读取标签，转换成{fname, label}的键值对
-    labels = {}
+    fname2label = {}
     with open(TRAIN_CURATED_LABEL_PATH, 'r', encoding='utf-8') as f:
         f.readline()  # 跳过标题
         while True:
@@ -241,15 +259,31 @@ def generate_label_csv(data_dir, csv_path):
             line = line.strip()
             fname = line[:12]
             label = line[13:].strip("\"")
-            labels[fname] = label
+            fname2label[fname] = label
 
     f = open(csv_path, 'w', encoding='utf-8', newline='')
     writer = csv.writer(f)
     for dirpath, dirnames, filenames in os.walk(data_dir):
         for fname in tqdm(filenames):
-            label = labels[fname[:8] + '.wav']
-            writer.writerow([fname, label])
+            labels = fname2label[fname[:8] + '.wav'].strip('\"').split(',')
+            # 转成one hot标签
+            one_hot_label = to_one_hot(labels)
+            row = [fname] + list(one_hot_label.tolist())
+            writer.writerow(row)
     f.close()
+
+
+def to_one_hot(labels):
+    """
+    生成one_hot标签
+
+    :param labels:
+    :return:
+    """
+    one_hot_label = np.zeros(shape=[class_num], dtype=np.int32)
+    for l in labels:
+        one_hot_label[class2id[l]] = 1
+    return one_hot_label
 
 
 def count_lines(path):
@@ -353,5 +387,7 @@ if __name__ == '__main__':
     #     # data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
     #     # data = data.reshape([w, h, 3])
     #     # print(data.shape)
-    convert_wav_to_fixed_length_melgram_csv(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_TRUNCATED_PATH, extractor)
-
+    # convert_wav_to_fixed_length_melgram_csv(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_TRUNCATED_PATH, extractor)
+    # convert_wav_to_fixed_length_melgram_npz(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_NUMPY_PATH, extractor)
+    # generate_one_hot_label_csv(TRAIN_CURATED_IMAGE_DIR, TRAIN_CURATED_IMAGE_LABEL_PATH)
+    pass

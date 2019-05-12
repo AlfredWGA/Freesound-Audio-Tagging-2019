@@ -20,6 +20,7 @@ def train():
     with tf.Session(config=config) as sess:
         config = CNNConfig()
         cnn = CNN(config)
+        train_init_op, valid_init_op = cnn.prepare_data()
         cnn.setVGG13()
 
         print('Setting Tensorboard and Saver...')
@@ -62,22 +63,20 @@ def train():
             train_op = tf.train.AdadeltaOptimizer(learning_rate).minimize(cnn.loss, global_step)
 
         # 训练步骤
-        def train_step(batch_x, batch_y, keep_prob=config.dropout_keep_prob):
+        def train_step(keep_prob=config.dropout_keep_prob):
             feed_dict = {
-                cnn.input_x: batch_x,
-                cnn.input_y: batch_y,
                 cnn.dropout_keep_prob: keep_prob,
                 cnn.training: True
             }
             sess.run(train_op, feed_dict=feed_dict)
-            feed_dict = {cnn.input_x: batch_x,
-                cnn.input_y: batch_y,
+            feed_dict = {
                 cnn.dropout_keep_prob: 1.0,
                 cnn.training: False}
-            step, loss, y_pred, summery = sess.run(
-                [global_step, cnn.loss, cnn.prediction, merged_summary],
+            step, loss, y_pred, y_true, summery = sess.run(
+                [global_step, cnn.loss, cnn.prediction, cnn.input_y, merged_summary],
                 feed_dict=feed_dict)
-            lrap = lwlrap.calculate_overall_lwlrap_sklearn(truth=batch_y, scores=y_pred)
+            # 计算lwlrap
+            lrap = lwlrap.calculate_overall_lwlrap_sklearn(truth=y_true, scores=y_pred)
             # per_class_lwlrap, weight_per_class = calculate_per_class_lwlrap(truth=batch_y, scores=y_pred)
             # mean_lwlrap = np.sum(per_class_lwlrap * weight_per_class)
             t = datetime.datetime.now().strftime('%m-%d %H:%M')
@@ -86,35 +85,23 @@ def train():
             train_summary_writer.add_summary(summery, step)
 
         # 验证步骤
-        def valid_step(next_valid_element):
+        def valid_step():
             # 把valid_loss和valid_accuracy归0
             y_true = []
             y_pred = []
-            valid_loss = 0.0
             i = 0
+            valid_loss = 0.0
             while True:
                 try:
-                    lines = sess.run(next_valid_element)
-                    batch_x, batch_y = cnn.convert_input(lines)
                     feed_dict = {
-                        cnn.input_x: batch_x,
-                        cnn.input_y: batch_y,
                         cnn.dropout_keep_prob: 1.0,
                         cnn.training: False
                     }
-                    # loss, pred, true = sess.run([cnn.loss, cnn.prediction, cnn.labels], feed_dict)
+                    loss, pred, true = sess.run([cnn.loss, cnn.prediction, cnn.input_y], feed_dict)
                     # 多次验证，取loss和prediction均值
-                    mean_loss = 0
-                    mean_pred = 0
-                    for i in range(config.multi_valid_num):
-                        loss, pred = sess.run([cnn.loss, cnn.prediction], feed_dict)
-                        mean_loss += loss
-                        mean_pred += pred
-                    mean_loss /= config.multi_valid_num
-                    mean_pred /= config.multi_valid_num
-                    y_pred.extend(mean_pred)
-                    y_true.extend(batch_y)
-                    valid_loss += mean_loss
+                    y_pred.extend(pred)
+                    y_true.extend(true)
+                    valid_loss += loss
                     i += 1
                 except tf.errors.OutOfRangeError:
                     # 遍历完验证集，计算评估
@@ -131,20 +118,25 @@ def train():
 
         print('Start training CNN...')
         sess.run(tf.global_variables_initializer())
-        train_init_op, valid_init_op, next_train_element, next_valid_element = cnn.prepare_data()
         # Training loop
         for epoch in range(config.epoch_num):
-            sess.run(train_init_op)
+            if cnn.use_img_input:
+                sess.run(train_init_op)
+            else:
+                sess.run(train_init_op, feed_dict={cnn.features_placeholder: cnn.features,
+                                          cnn.labels_placeholder: cnn.labels})
             while True:
                 try:
-                    lines = sess.run(next_train_element)
-                    batch_x, batch_y = cnn.convert_input(lines)
-                    train_step(batch_x, batch_y, config.dropout_keep_prob)
+                    train_step(config.dropout_keep_prob)
                 except tf.errors.OutOfRangeError:
                     # 初始化验证集迭代器
-                    sess.run(valid_init_op)
+                    if cnn.use_img_input:
+                        sess.run(valid_init_op)
+                    else:
+                        sess.run(valid_init_op, feed_dict={cnn.features_placeholder: cnn.features,
+                                                           cnn.labels_placeholder: cnn.labels})
                     # 计算验证集准确率
-                    valid_step(next_valid_element)
+                    valid_step()
                     break
         train_summary_writer.close()
         log_file.close()

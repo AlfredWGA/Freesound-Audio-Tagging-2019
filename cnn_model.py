@@ -18,12 +18,10 @@ class CNNConfig(object):
         self.img_width = feature.img_width       # 图像的尺寸
         self.img_height = feature.img_height
         self.use_img_input = False        # 是否使用图片作为输入，False使用原始的feature vector
-        self.dropout_keep_prob = 1.0     # dropout保留比例
-        self.learning_rate = 1e-4   # 学习率
-        self.multi_valid_num = 1   # 验证时，验证n次，结果取平均
-        self.train_batch_size = 128         # 每批训练大小
-        self.valid_batch_size = 128        # 每批测试大小
-        self.epoch_num = 1      # 总迭代轮次
+        self.dropout_keep_prob = 0.5     # dropout保留比例
+        self.learning_rate = 1e-3   # 学习率
+        self.batch_size = 128         # 批大小
+        self.epoch_num = 250      # 总迭代轮次
 
 
 class CNN(object):
@@ -32,8 +30,7 @@ class CNN(object):
         self.img_width = config.img_width
         self.img_height = config.img_height
         self.use_img_input = config.use_img_input
-        self.train_batch_size = config.train_batch_size
-        self.valid_batch_size = config.valid_batch_size
+        self.batch_size = config.batch_size
         if self.use_img_input:
             self.input_x_dim = 3
         else:
@@ -41,13 +38,16 @@ class CNN(object):
 
     def _set_input(self):
         # Input layer
-        self.input_x = tf.placeholder(tf.float32, [None, self.img_width, self.img_height, self.input_x_dim], name="input_x")
-        self.input_y = tf.placeholder(tf.float32, [None, self.class_num], name="labels")
-        self.dropout_keep_prob = tf.placeholder(tf.float32, name="dropout_keep_prob")
-
+        # self.input_x = tf.placeholder(tf.float32, [None, self.img_width, self.img_height, self.input_x_dim], name="input_x")
+        # self.input_y = tf.placeholder(tf.float32, [None, self.class_num], name="labels")
         # 训练时batch_normalization的Training参数应为True,
         # 验证或测试时应为False
+        self.dropout_keep_prob = tf.placeholder(tf.float32, name="dropout_keep_prob")
         self.training = tf.placeholder(tf.bool, name='training')
+        self.input_x = self.next_element[0]
+        self.input_y = self.next_element[1]
+        if not self.use_img_input:
+            self.input_x = tf.expand_dims(self.input_x, -1)
 
     def _set_loss(self):
         # Loss function
@@ -79,7 +79,7 @@ class CNN(object):
             kernel_initializer=tf.contrib.layers.xavier_initializer(),
             bias_initializer=tf.initializers.constant(0.0),
         )
-        output = tf.layers.batch_normalization(output, training=training)
+        # output = tf.layers.batch_normalization(output, training=training)
         return tf.nn.relu(output)
 
     def _maxpool_2x2(self, input):
@@ -112,6 +112,7 @@ class CNN(object):
 
         return tf.layers.dropout(fc_output, dropout_keep_prob)
 
+    '''
     def convert_input(self, lines):
         """
         把读取的字符串数据转为形状为[batch_size, img_size, img_size, 1]的数组，
@@ -150,11 +151,12 @@ class CNN(object):
         batch_y = np.asarray(batch_y)
 
         return batch_x, batch_y
-
+    '''
     def prepare_data(self):
         self.class2id = feature.class2id
 
         # 读取标签，转换成{fname, label}的键值对
+        # ==================================================
         self.fname2label = {}
         with open('data/' + feature.TRAIN_CURATED_LABEL_PATH, 'r', encoding='utf-8') as f:
             f.readline()  # 跳过标题
@@ -166,32 +168,55 @@ class CNN(object):
                 fname = line[:12]
                 label = line[13:].strip("\"")
                 self.fname2label[fname] = label
-
+        # =======================================================================
         total_size = feature.TRAIN_CURATED_NON_SILENT_SIZE
         train_size = int(total_size*0.7)
 
-        print('Shuffling dataset...')
-        if self.use_img_input:
-            dataset = TextLineDataset('data/' + feature.TRAIN_CURATED_IMAGE_LABEL_PATH).skip(1).shuffle(int(total_size*0.3))
-        else:
-            dataset = TextLineDataset('data/' + feature.TRAIN_CURATED_TRUNCATED_PATH).skip(1).shuffle(int(total_size*0.3))
+        print('Load and shuffle dataset...')
 
-        train_dataset = dataset.take(train_size).batch(self.train_batch_size)
-        valid_dataset = dataset.skip(train_size).batch(self.valid_batch_size)
+        # 读取图片和label的map函数
+        def read_image(*row):
+            image = tf.read_file('data/' + feature.TRAIN_CURATED_IMAGE_DIR + '/' + row[0])
+            image = tf.reshape(tf.image.decode_jpeg(image), [self.img_width, self.img_height, self.input_x_dim])
+            image = tf.cast(image, tf.float32)
+            label = tf.cast(row[1:], tf.float32)
+            return image, label
+
+        if self.use_img_input:
+            path = 'data/' + feature.TRAIN_CURATED_IMAGE_LABEL_PATH
+            print('Using image input.')
+            print('Loading data from {}'.format(path))
+            dataset = tf.data.experimental.CsvDataset(path,
+                                                      record_defaults=[tf.string]+[tf.int32 for _ in range(self.class_num)])
+            dataset = dataset.map(read_image)
+        else:
+            # 读取.npz文件
+            path = 'data/' + feature.TRAIN_CURATED_NUMPY_PATH
+            print('Using feature vector input.')
+            print('Loading data from {}'.format(path))
+            data = np.load(path)
+            self.features = data['log_melgram']
+            self.labels = data['labels']
+
+            self.features_placeholder = tf.placeholder(tf.float32, self.features.shape)
+            self.labels_placeholder = tf.placeholder(tf.float32, self.labels.shape)
+
+            # dataset = TextLineDataset('data/' + feature.TRAIN_CURATED_TRUNCATED_PATH).skip(1).shuffle(int(total_size*0.3))
+            dataset = tf.data.Dataset.from_tensor_slices((self.features_placeholder, self.labels_placeholder))
+
+        train_dataset = dataset.take(train_size).batch(self.batch_size)
+        valid_dataset = dataset.skip(train_size).batch(self.batch_size)
 
         # Create a reinitializable iterator
-        train_iterator = train_dataset.make_initializable_iterator()
-        valid_iterator = valid_dataset.make_initializable_iterator()
+        iterator = tf.data.Iterator.from_structure(train_dataset.output_types,
+                                                   train_dataset.output_shapes)
 
-        train_init_op = train_iterator.initializer
-        valid_init_op = valid_iterator.initializer
+        train_init_op =  iterator.make_initializer(train_dataset)
+        valid_init_op = iterator.make_initializer(valid_dataset)
 
-        # 要获取元素，先sess.run(train_init_op)初始化迭代器
-        # 再sess.run(next_train_element)
-        next_train_element = train_iterator.get_next()
-        next_valid_element = valid_iterator.get_next()
+        self.next_element = iterator.get_next()
 
-        return train_init_op, valid_init_op, next_train_element, next_valid_element
+        return train_init_op, valid_init_op
         # ==============================================================
 
     def setVGG13(self):
@@ -243,9 +268,8 @@ class CNN(object):
         dims = shape[1]*shape[2]*shape[3]
         maxpool_5_output_flatten = tf.reshape(avgpool_5_output, [-1, dims])
 
-        fc1 = self._fc(maxpool_5_output_flatten, 3000, self.dropout_keep_prob)
         # 输出层
-        self.score = self._fc(fc1, self.class_num, self.dropout_keep_prob, name='score')
+        self.score = self._fc(maxpool_5_output_flatten, self.class_num, self.dropout_keep_prob, name='score')
 
         self.prediction = tf.nn.softmax(self.score, name='prediction')
         self._set_loss()
