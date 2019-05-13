@@ -48,7 +48,6 @@ class CNN(object):
     def _set_loss(self):
         # Loss function
         with tf.name_scope('loss'):
-            # losses = tf.nn.sigmoid_cross_entropy_with_logits(logits=self.score, labels=self.input_y)
             losses = tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.score, labels=self.input_y)
             self.loss = tf.reduce_mean(losses) + tf.losses.get_regularization_loss()
 
@@ -185,7 +184,7 @@ class CNN(object):
             dataset = tf.data.experimental.CsvDataset(path,
                                                       record_defaults=[tf.string]+[tf.int32 for _ in range(self.class_num)],
                                                       header=True)
-            dataset = dataset.map(read_image).shuffle(int(total_size*0.5))
+            dataset = dataset.map(read_image).shuffle(total_size)
         else:
             # 读取.npz文件
             path = 'data/' + feature.TRAIN_CURATED_NUMPY_PATH
@@ -198,7 +197,7 @@ class CNN(object):
             self.features_placeholder = tf.placeholder(tf.float32, self.features.shape, name='features')
             self.labels_placeholder = tf.placeholder(tf.float32, self.labels.shape, name='labels')
             dataset = tf.data.Dataset.from_tensor_slices(
-                (self.features_placeholder, self.labels_placeholder)).shuffle(int(total_size*0.5))
+                (self.features_placeholder, self.labels_placeholder)).shuffle(total_size)
 
         train_dataset = dataset.take(train_size).batch(self.batch_size)
         valid_dataset = dataset.skip(train_size).batch(self.batch_size)
@@ -220,11 +219,9 @@ class CNN(object):
         :return:
         """
         self._set_input()
-        # 加入批标准化以减少过拟合
-        input_x_norm = tf.layers.batch_normalization(self.input_x, training=self.training)
 
         # conv3-64
-        conv3_64_1 = self._conv_BN_relu(input_x_norm, 3, 1, 64, self.training)
+        conv3_64_1 = self._conv_BN_relu(self.input_x, 3, 1, 64, self.training)
         conv3_64_output = self._conv_BN_relu(conv3_64_1, 3, 1, 64, self.training)
 
         # maxpool-1
@@ -245,8 +242,8 @@ class CNN(object):
         maxpool_3_output = self._maxpool_2x2(conv3_256_output)
 
         # conv3-512
-        conv3_512_1 = self._conv(maxpool_3_output, 3, 1, 512)
-        conv3_512_output = self._conv(conv3_512_1, 1, 1, 512)
+        conv3_512_1 = self._conv_BN_relu(maxpool_3_output, 3, 1, 512, self.training)
+        conv3_512_output = self._conv_BN_relu(conv3_512_1, 1, 1, 512, self.training)
 
         # maxpool-4
         maxpool_4_output = self._maxpool_2x2(conv3_512_output)
