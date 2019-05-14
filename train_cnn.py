@@ -52,14 +52,13 @@ def train():
         # =========================================================================
 
         global_step = tf.Variable(0, trainable=False)
-        # 衰减的学习率，每1000次衰减4%
         learning_rate = tf.train.exponential_decay(config.learning_rate,
-                                                   global_step, decay_steps=5000, decay_rate=0.98, staircase=False)
+                                                   global_step, decay_steps=2000, decay_rate=0.95, staircase=False)
 
         # 保证Batch normalization的执行
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):  # 保证train_op在update_ops执行之后再执行。
-            train_op = tf.train.AdamOptimizer(learning_rate).minimize(cnn.loss, global_step)
+            train_op = tf.train.GradientDescentOptimizer(learning_rate).minimize(cnn.loss, global_step)
 
         # 训练步骤
         def train_step(keep_prob=config.dropout_keep_prob):
@@ -79,13 +78,18 @@ def train():
             # 把结果写入Tensorboard中
             train_summary_writer.add_summary(summery, step)
 
+        train.current_lrap = 0.0
+        train.best_lrap = 0.0
+        train.patience = 3
+        train.current_iter = 0
+
         # 验证步骤
         def valid_step():
             # 把valid_loss和valid_accuracy归0
             y_true = []
             y_pred = []
             i = 0
-            valid_loss = 0.0
+            losses = 0.0
             while True:
                 try:
                     feed_dict = {
@@ -93,23 +97,33 @@ def train():
                         cnn.training: False
                     }
                     loss, pred, true = sess.run([cnn.loss, cnn.prediction, cnn.input_y], feed_dict)
-                    # 多次验证，取loss和prediction均值
                     y_pred.extend(pred)
                     y_true.extend(true)
-                    valid_loss += loss
+                    losses += loss
                     i += 1
                 except tf.errors.OutOfRangeError:
                     # 遍历完验证集，计算评估
-                    valid_loss /= i
+                    valid_loss = losses / i
                     y_true = np.asarray(y_true)
                     y_pred = np.asarray(y_pred)
                     lrap = lwlrap.calculate_overall_lwlrap_sklearn(truth=y_true, scores=y_pred)
+
                     t = datetime.datetime.now().strftime('%m-%d %H:%M')
-                    log = '%s: epoch %d, validation loss: %0.6f, lwlrap: %0.6f' % (t, epoch, valid_loss, lrap)
+                    log = '%s: epoch %d, validation loss: %0.6f, lwlrap: %0.6f' % (t, epoch,  valid_loss, lrap)
                     print(log)
                     log_file.write(log + '\n')
                     time.sleep(3)
-                    return
+
+                    train.current_lrap = lrap
+                    if train.best_lrap < train.current_lrap:
+                        train.best_lrap = train.current_lrap
+                        train.current_iter = 0
+                        return
+                    else:
+                        train.current_iter += 1
+                        if train.patience == train.current_iter:
+                            print('Early stopping triggered. Training stops.')
+                            raise KeyboardInterrupt
 
         print('Start training CNN...')
         sess.run(tf.global_variables_initializer())
@@ -136,7 +150,7 @@ def train():
                 except KeyboardInterrupt:
                     train_summary_writer.close()
                     log_file.close()
-                    # 训练完成后保存参数
+                    # 提前终止训练
                     path = saver.save(sess, checkpoint_prefix, global_step=global_step)
                     print("Saved model checkpoint to {}\n".format(path))
                     return

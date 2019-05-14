@@ -19,9 +19,9 @@ class CNNConfig(object):
         self.img_width = feature.img_width       # 图像的尺寸
         self.use_img_input = False        # 是否使用图片作为输入，False使用原始的feature vector
         self.dropout_keep_prob = 0.5     # dropout保留比例
-        self.learning_rate = 5e-4   # 学习率
+        self.learning_rate = 1e-4   # 学习率
         self.batch_size = 128         # 批大小
-        self.epoch_num = 300      # 总迭代轮次
+        self.epoch_num = 250      # 总迭代轮次
 
 
 class CNN(object):
@@ -219,9 +219,9 @@ class CNN(object):
         :return:
         """
         self._set_input()
-
+        self.input_norm = tf.layers.batch_normalization(self.input_x, training=self.training)
         # conv3-64
-        conv3_64_1 = self._conv_BN_relu(self.input_x, 3, 1, 64, self.training)
+        conv3_64_1 = self._conv_BN_relu(self.input_norm, 3, 1, 64, self.training)
         conv3_64_output = self._conv_BN_relu(conv3_64_1, 3, 1, 64, self.training)
 
         # maxpool-1
