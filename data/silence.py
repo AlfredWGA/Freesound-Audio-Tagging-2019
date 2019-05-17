@@ -129,6 +129,6 @@ def _moving_average(x, n=3):
 
 
 if __name__ == '__main__':
-    for dirpath, dirnames, filenames in os.walk(feature.TRAIN_CURATED_DIR):
+    for dirpath, dirnames, filenames in os.walk(feature.TEST_DIR):
         for fname in filenames:
-            print(split_audio(dirpath, fname, feature.TRAIN_CURATED_NON_SILENT_DIR))
+            print(split_audio(dirpath, fname, feature.TEST_NON_SILENCE_DIR))

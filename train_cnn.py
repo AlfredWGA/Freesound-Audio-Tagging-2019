@@ -1,6 +1,4 @@
 # coding=utf-8
-import sklearn.metrics as metrics
-import sklearn as sk
 import tensorflow as tf
 from cnn_model import CNN
 from cnn_model import CNNConfig
@@ -53,7 +51,7 @@ def train():
 
         global_step = tf.Variable(0, trainable=False)
         learning_rate = tf.train.exponential_decay(config.learning_rate,
-                                                   global_step, decay_steps=2000, decay_rate=0.95, staircase=False)
+                                                   global_step, decay_steps=2000, decay_rate=0.94, staircase=False)
 
         # 保证Batch normalization的执行
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -80,7 +78,7 @@ def train():
 
         train.current_lrap = 0.0
         train.best_lrap = 0.0
-        train.patience = 3
+        train.patience = 5
         train.current_iter = 0
 
         # 验证步骤
@@ -107,23 +105,12 @@ def train():
                     y_true = np.asarray(y_true)
                     y_pred = np.asarray(y_pred)
                     lrap = lwlrap.calculate_overall_lwlrap_sklearn(truth=y_true, scores=y_pred)
-
                     t = datetime.datetime.now().strftime('%m-%d %H:%M')
                     log = '%s: epoch %d, validation loss: %0.6f, lwlrap: %0.6f' % (t, epoch,  valid_loss, lrap)
                     print(log)
                     log_file.write(log + '\n')
                     time.sleep(3)
-
-                    train.current_lrap = lrap
-                    if train.best_lrap < train.current_lrap:
-                        train.best_lrap = train.current_lrap
-                        train.current_iter = 0
-                        return
-                    else:
-                        train.current_iter += 1
-                        if train.patience == train.current_iter:
-                            print('Early stopping triggered. Training stops.')
-                            raise KeyboardInterrupt
+                    return
 
         print('Start training CNN...')
         sess.run(tf.global_variables_initializer())
@@ -150,7 +137,6 @@ def train():
                 except KeyboardInterrupt:
                     train_summary_writer.close()
                     log_file.close()
-                    # 提前终止训练
                     path = saver.save(sess, checkpoint_prefix, global_step=global_step)
                     print("Saved model checkpoint to {}\n".format(path))
                     return

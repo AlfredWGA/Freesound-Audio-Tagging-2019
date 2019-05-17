@@ -13,10 +13,10 @@ from tqdm import tqdm
 
 TRAIN_CURATED_DIR = 'train_curated'
 TRAIN_CURATED_NON_SILENCE_DIR = TRAIN_CURATED_DIR + '_non_silence'
-TRAIN_CURATED_IMAGE_DIR = TRAIN_CURATED_DIR + '_image'
+# TRAIN_CURATED_IMAGE_DIR = TRAIN_CURATED_DIR + '_image'
 
 TRAIN_CURATED_LABEL_PATH = 'train_curated.csv'
-TRAIN_CURATED_IMAGE_LABEL_PATH = 'train_curated_image.csv'
+# TRAIN_CURATED_IMAGE_LABEL_PATH = 'train_curated_image.csv'
 TRAIN_CURATED_NUMPY_PATH = 'train_curated_np.npz'
 TRAIN_CURATED_TRUNCATED_PATH = 'train_curated_truncated.csv'
 
@@ -26,6 +26,7 @@ TEST_DIR = 'test'
 TEST_NON_SILENCE_DIR = TEST_DIR + '_non_silence'
 TEST_NUMPY_PATH = 'test_np.npz'
 
+SAMPLE_PATH = 'sample_submission.csv'
 
 img_height = 128
 img_width = 64
@@ -133,7 +134,7 @@ def truncate_features(vector, n_mel=64, chunk_size=128, r_threshold=32):
 
     return np.array(chunks), n_chunks
 
-
+'''
 def convert_wav_to_fixed_length_melgram_image(wav_dir, output_dir, extractor):
     """
     把所有的.wav文件转换为定长的log-melgram图片，存到output_dir指定的目录下
@@ -169,13 +170,15 @@ def convert_wav_to_fixed_length_melgram_image(wav_dir, output_dir, extractor):
                 chunk_name = '{}_{}.jpg'.format(fname[:-4], i)
                 fig.savefig(output_dir + '/' + chunk_name)
                 plt.close()
+'''
 
 
 def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_path, extractor, testing=False):
     """
     把所有的.wav文件转换为定长的log-melgram数组，将数组和one hot标签存入.npz
+
     :param wav_dir: The dir containing all the .wav files.
-    :param output_dir: Output dir for .npz file.
+    :param output_path: Output path for .npz file.
     :param extractor: Instance of LogmelExtractor
     :return:
     """
@@ -201,7 +204,8 @@ def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_path, extractor, tes
         for fname in tqdm(filenames):
             x, sr = librosa.load(os.path.join(dirpath, fname), sr=None)
             melgram = extractor.extract(x)
-            # melgram = normalize(melgram, axis=0)
+            melgram = normalize(melgram)
+            # TODO: 加入delta信息，样本形状为[height, width, 2]
             chunks, n_chunk = truncate_features(melgram, n_mel=extractor.n_mels)
             for i, chunk in enumerate(chunks):
                 if not testing:
@@ -225,43 +229,13 @@ def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_path, extractor, tes
         np.savez(output_path, fnames=fnames, log_melgram=feature_vectors)
     print('Save numpy arrays to {}'.format(output_path))
 
-'''
-def convert_wav_to_fixed_length_melgram_csv(wav_dir, output_path, extractor):
-    """
-    把所有的.wav文件转换为定长的log-melgram数组，以字符串形式存入.csv文件中
-
-    :param wav_dir: The dir containing all the .wav files.
-    :param output_dir: Output dir for .csv file.
-    :param extractor: Instance of LogmelExtractor
-    :return:
-    """
-
-    wf = open(output_path, 'w', encoding='utf-8', newline='')
-    writer = csv.writer(wf)
-
-    for dirpath, dirnames, filenames in os.walk(wav_dir):
-        for fname in filenames:
-            x, sr = librosa.load(os.path.join(dirpath, fname), sr=None)
-            melgram = extractor.extract(x)
-            # melgram = normalize(melgram, axis=0)
-            chunks, n_chunk = truncate_features(melgram, n_mel=extractor.n_mels)
-            for i, chunk in enumerate(chunks):
-                chunk_name = '{}_{}.wav'.format(fname[:-4], i)
-                row = [chunk_name]
-                chunk_feature = [x for x in chunk.reshape([-1])]
-                row.extend(chunk_feature)
-                writer.writerow(row)
-
-    print('Save csv file to {}'.format(output_path))
-'''
-
 
 def generate_one_hot_label_csv(data_dir, csv_path):
     """
     把数据的文件名及标签转为[fname, label]的csv文件
 
-    :param image_dir:
-    :param csv_path:
+    :param image_dir: 包含.wav文件的文件夹
+    :param csv_path: .csv文件的输出路径
     :return:
     """
     # 读取标签，转换成{fname, label}的键值对
@@ -294,7 +268,7 @@ def to_one_hot(labels):
     """
     生成one_hot标签
 
-    :param labels:
+    :param labels: 文本标签的list
     :return:
     """
     one_hot_label = np.zeros(shape=[class_num], dtype=np.int32)
@@ -381,10 +355,8 @@ class LogmelExtractor(object):
 
 if __name__ == '__main__':
     extractor = LogmelExtractor(sample_rate=32000, n_window=1024, hop_length=512, n_mels=64)
-    # convert_wav_to_fixed_length_melgram_image(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_IMAGE_DIR, extractor)
-    # convert_wav_to_fixed_length_melgram_npz(TEST_DIR, TEST_NUMPY_PATH, extractor, testing=True)
-    # generate_one_hot_label_csv(TRAIN_CURATED_IMAGE_DIR, TRAIN_CURATED_IMAGE_LABEL_PATH)
+    convert_wav_to_fixed_length_melgram_npz(TEST_NON_SILENCE_DIR, TEST_NUMPY_PATH, extractor, testing=True)
     data = np.load(TEST_NUMPY_PATH)
     for item in data.items():
-        print(item)
+        print(item[1].shape)
     pass

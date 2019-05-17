@@ -21,7 +21,7 @@ class CNNConfig(object):
         self.dropout_keep_prob = 0.5     # dropout保留比例
         self.learning_rate = 1e-4   # 学习率
         self.batch_size = 128         # 批大小
-        self.epoch_num = 250      # 总迭代轮次
+        self.epoch_num = 200      # 总迭代轮次
 
 
 class CNN(object):
@@ -219,52 +219,57 @@ class CNN(object):
         :return:
         """
         self._set_input()
-        self.input_norm = tf.layers.batch_normalization(self.input_x, training=self.training)
+        input_norm = tf.layers.batch_normalization(self.input_x, training=self.training)
         # conv3-64
-        conv3_64_1 = self._conv_BN_relu(self.input_norm, 3, 1, 64, self.training)
-        conv3_64_output = self._conv_BN_relu(conv3_64_1, 3, 1, 64, self.training)
+        conv3_64_1 = self._conv_BN_relu(input_norm, 3, 1, 32, self.training)
+        conv3_64_output = self._conv_BN_relu(conv3_64_1, 3, 1, 32, self.training)
 
         # maxpool-1
         maxpool_1_output = self._maxpool_2x2(conv3_64_output)
 
         # conv3-128
-        conv3_128_1 = self._conv_BN_relu(maxpool_1_output, 3, 1, 128, self.training)
-        conv3_128_output = self._conv_BN_relu(conv3_128_1, 3, 1, 128, self.training)
+        conv3_128_1 = self._conv_BN_relu(maxpool_1_output, 3, 1, 64, self.training)
+        conv3_128_output = self._conv_BN_relu(conv3_128_1, 3, 1, 64, self.training)
 
         # maxpool-2
         maxpool_2_output = self._maxpool_2x2(conv3_128_output)
 
         # conv3-256
-        conv3_256_1 = self._conv_BN_relu(maxpool_2_output, 3, 1, 256, self.training)
-        conv3_256_output = self._conv_BN_relu(conv3_256_1, 3, 1, 256, self.training)
+        conv3_256_1 = self._conv_BN_relu(maxpool_2_output, 3, 1, 64, self.training)
+        conv3_256_output = self._conv_BN_relu(conv3_256_1, 3, 1, 64, self.training)
 
         # maxpool-3
         maxpool_3_output = self._maxpool_2x2(conv3_256_output)
 
         # conv3-512
-        conv3_512_1 = self._conv_BN_relu(maxpool_3_output, 3, 1, 512, self.training)
-        conv3_512_output = self._conv_BN_relu(conv3_512_1, 1, 1, 512, self.training)
+        conv3_512_1 = self._conv_BN_relu(maxpool_3_output, 3, 1, 256, self.training)
+        conv3_512_output = self._conv_BN_relu(conv3_512_1, 1, 1, 256, self.training)
 
         # maxpool-4
         maxpool_4_output = self._maxpool_2x2(conv3_512_output)
 
         # conv4-512
-        conv3_512_1 = self._conv_BN_relu(maxpool_4_output, 3, 1, 512, self.training)
-        conv3_512_output = self._conv_BN_relu(conv3_512_1, 3, 1, 512, self.training)
+        # conv3_512_1 = self._conv_BN_relu(maxpool_4_output, 3, 1, 512, self.training)
+        # conv3_512_output = self._conv_BN_relu(conv3_512_1, 3, 1, 512, self.training)
 
         # avgpool-5
-        avgpool_5_output = self._avgpool_2x2(conv3_512_output)
+        # avgpool_5_output = self._avgpool_2x2(conv3_512_output)
 
         # flatten
-        shape = avgpool_5_output.shape.as_list()
+        shape = maxpool_4_output.shape.as_list()
         dims = shape[1]*shape[2]*shape[3]
-        maxpool_5_output_flatten = tf.reshape(avgpool_5_output, [-1, dims])
+        maxpool_5_output_flatten = tf.reshape(maxpool_4_output, [-1, dims])
+
+        f1 = self._fc(maxpool_5_output_flatten, 64, self.dropout_keep_prob)
+
+        f2 = self._fc(f1, 1024, self.dropout_keep_prob)
 
         # 输出层
-        self.score = self._fc(maxpool_5_output_flatten, self.class_num, self.dropout_keep_prob, name='score')
+        self.score = self._fc(f2, self.class_num, self.dropout_keep_prob, name='score')
 
         self.prediction = tf.nn.softmax(self.score, name='prediction')
         self._set_loss()
+
 
 
 
