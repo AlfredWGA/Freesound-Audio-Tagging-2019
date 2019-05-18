@@ -6,6 +6,8 @@ data/train_curated_non_silence
 *.npz
 *.zip
 *.rar
+*.xml
+*.csv
 
 # logs
 logs

@@ -186,15 +186,9 @@ def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_path, extractor, tes
     if not testing:
         fname2label = {}
         with open(TRAIN_CURATED_LABEL_PATH, 'r', encoding='utf-8') as f:
-            f.readline()  # 跳过标题
-            while True:
-                line = f.readline()
-                if line == '':
-                    break
-                line = line.strip()
-                fname = line[:12]
-                label = line[13:].strip("\"")
-                fname2label[fname] = label
+            reader = csv.DictReader(f)
+            for row in reader:
+                fname2label[row['fname']] = row['labels']
 
     feature_vectors = []
     labels = []
@@ -210,7 +204,7 @@ def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_path, extractor, tes
             for i, chunk in enumerate(chunks):
                 if not testing:
                     # 处理多个标签的情况
-                    label = fname2label[fname[:8] + '.wav'].strip('\"').split(',')
+                    label = fname2label[fname[:8] + '.wav'].split(',')
                     one_hot_label = to_one_hot(label)
                     labels.append(one_hot_label)
                 else:
@@ -229,7 +223,7 @@ def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_path, extractor, tes
         np.savez(output_path, fnames=fnames, log_melgram=feature_vectors)
     print('Save numpy arrays to {}'.format(output_path))
 
-
+'''
 def generate_one_hot_label_csv(data_dir, csv_path):
     """
     把数据的文件名及标签转为[fname, label]的csv文件
@@ -263,6 +257,8 @@ def generate_one_hot_label_csv(data_dir, csv_path):
             writer.writerow(row)
     f.close()
 
+'''
+
 
 def to_one_hot(labels):
     """
@@ -275,6 +271,7 @@ def to_one_hot(labels):
     for l in labels:
         one_hot_label[class2id[l]] = 1
     return one_hot_label
+
 
 
 def count_lines(path):
@@ -354,9 +351,9 @@ class LogmelExtractor(object):
 
 
 if __name__ == '__main__':
-    # extractor = LogmelExtractor(sample_rate=32000, n_window=1024, hop_length=512, n_mels=64)
-    # convert_wav_to_fixed_length_melgram_npz(TEST_NON_SILENCE_DIR, TEST_NUMPY_PATH, extractor, testing=True)
-    data = np.load(TEST_NUMPY_PATH)
-    for item in data.items():
-        print(item)
-    pass
+    extractor = LogmelExtractor(sample_rate=32000, n_window=1024, hop_length=512, n_mels=64)
+    convert_wav_to_fixed_length_melgram_npz(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_NUMPY_PATH, extractor)
+    # data = np.load(TEST_NUMPY_PATH)
+    # for item in data.items():
+    #     print(item)
+    # pass
