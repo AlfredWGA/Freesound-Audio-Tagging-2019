@@ -32,7 +32,7 @@ def train(train=True):
 
     Fname = 'Audio_'
     Time = Fname + str(time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime()))
-    tensorboard = TensorBoard(log_dir='./logs/' + Time, histogram_freq=0, write_graph=False, write_images=False,
+    tensorboard = TensorBoard(log_dir='../logs/' + Time, histogram_freq=0, write_graph=False, write_images=False,
                               embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None)
 
     # meta_train = np.zeros(shape=(len(data), 80))
@@ -45,7 +45,7 @@ def train(train=True):
         print(len(te_ind), len(tr_ind))
         X_train, X_train_label = data[tr_ind], label[tr_ind]
         X_val, X_val_label = data[te_ind], label[te_ind]
-        model = simple_cnn()
+        model = simple_VGG()
         print(model.summary())
         model_save_path = '../model/model_cnn_{}.h5'.format(str(i))
         if not train:
