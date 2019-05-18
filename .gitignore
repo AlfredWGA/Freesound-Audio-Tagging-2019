@@ -126,3 +126,7 @@ tensorboard/
 # Checkpoints
 checkpoints/
 
+*.xml
+*.rar
+*.npz
+*.zip
