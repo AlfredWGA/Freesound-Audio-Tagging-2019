@@ -11,6 +11,6 @@ def simple_cnn():
     conv = Conv1D(64, 3, padding="same", activation="relu")(conv)
     F = Flatten()(conv)
     fc = Dense(128)(F)
-    main_output = Dense(80, activation="sigmoid")(fc)
+    main_output = Dense(80, activation="softmax")(fc)
     model = Model(inputs=main_input, outputs=main_output)
     return model

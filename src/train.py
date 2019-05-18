@@ -23,10 +23,9 @@ from metrics import *
 
 
 def train(train=True):
-    raw_data = np.load("../input/train_curated_np.npz")
+    raw_data = np.load("../data/train_curated_np.npz")
     data = raw_data["log_melgram"]  # (25670, 128, 64)
     label = raw_data["labels"]  # (25670, 80)
-
     config = K.tf.ConfigProto()
     config.gpu_options.allow_growth = True
     session = K.tf.Session(config=config)
@@ -48,7 +47,7 @@ def train(train=True):
         X_val, X_val_label = data[te_ind], label[te_ind]
         model = simple_cnn()
         print(model.summary())
-        model.compile(loss='binary_crossentropy',
+        model.compile(loss='categorical_crossentropy',
                       optimizer='adam',
                       metrics=[tf_lwlrap])
         model_save_path = '../model/model_weight_raw_cnn_{}.h5'.format(str(i))
@@ -64,7 +63,7 @@ def train(train=True):
                                 batch_size=128,
                                 epochs=100,
                                 shuffle=True,
-                                validation_data=(X_val, X_val_label), callbacks=[ear, checkpoint])
+                                validation_data=(X_val, X_val_label), callbacks=[ear, checkpoint, tensorboard])
 
             lwlrap += history.history["val_tf_lwlrap"][-1]
         K.clear_session()

@@ -1,0 +1,12 @@
+# data
+data/test
+data/test_non_silence
+data/train_curated
+data/train_curated_non_silence
+
+# checkpoints
+model
+
+*.pyc
+
+.idea
