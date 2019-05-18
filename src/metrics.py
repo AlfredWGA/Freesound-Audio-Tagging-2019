@@ -16,6 +16,10 @@ def calculate_overall_lwlrap_sklearn(truth, scores):
     return overall_lwlrap
 
 
+def tf_wrapped_lwlrap_sklearn(truth, scores):
+    return tf.py_func(calculate_overall_lwlrap_sklearn, [truth, scores], tf.double)
+
+
 def _one_sample_positive_class_precisions(scores, truth):
     """Calculate precisions for each true class for a single sample.
 

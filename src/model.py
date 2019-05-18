@@ -2,15 +2,40 @@ from keras.models import Sequential, Model
 from keras.layers import Dense, Embedding, Activation, merge, Input, Lambda, Reshape, LSTM, RNN, CuDNNLSTM, \
     SimpleRNNCell, SpatialDropout1D, Add, Maximum, Conv2D
 from keras.layers import Conv1D, Flatten, Dropout, MaxPool1D, GlobalAveragePooling1D, concatenate, AveragePooling1D, \
-    ConvLSTM2D
+    ConvLSTM2D, BatchNormalization, MaxPool2D
+from keras import backend as K
+import feature
 
 
 def simple_cnn():
-    main_input = Input(shape=(128, 64))
+    main_input = Input(shape=(feature.img_height, feature.img_width))
     conv = Conv1D(64, 3, padding="same", activation="relu")(main_input)
     conv = Conv1D(64, 3, padding="same", activation="relu")(conv)
     F = Flatten()(conv)
     fc = Dense(128)(F)
-    main_output = Dense(80, activation="softmax")(fc)
+    main_output = Dense(feature.class_num, activation="softmax")(fc)
+    model = Model(inputs=main_input, outputs=main_output)
+    return model
+
+
+def simple_VGG():
+    main_input = Input(shape=(feature.img_height, feature.img_width))
+    expanded_input = Lambda(lambda x: K.expand_dims(x, -1))(main_input)
+
+    conv = Conv2D(64, 3, padding='same', activation="relu")(expanded_input)
+    conv = Conv2D(64, 3, padding='same', activation="relu")(conv)
+
+    pool_1 = MaxPool2D(2, padding='same')(conv)
+
+    conv = Conv2D(128, 3, padding='same', activation="relu")(pool_1)
+    conv = Conv2D(128, 3, padding='same', activation="relu")(conv)
+
+    pool_2 = MaxPool2D(2, padding='same')(conv)
+
+    flatten = Flatten()(pool_2)
+    fc = Dense(1024, activation='relu')(flatten)
+    fc = Dropout(0.5)(fc)
+
+    main_output = Dense(feature.class_num, activation="softmax")(fc)
     model = Model(inputs=main_input, outputs=main_output)
     return model

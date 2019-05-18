@@ -5,25 +5,29 @@ from keras.preprocessing.sequence import pad_sequences
 from keras_preprocessing.text import Tokenizer
 import matplotlib.pyplot as plt
 import matplotlib.mlab as mlab
-from keras import optimizers
-from keras import regularizers
-from keras.layers import BatchNormalization
 from keras.callbacks import TensorBoard, EarlyStopping, ModelCheckpoint
 from keras.utils import to_categorical
 import time
-from scipy import interp
 from sklearn import metrics
 from keras import backend as K
 from keras.models import load_model
 import csv
 from sklearn.model_selection import StratifiedKFold
-from keras import backend as K
 from model import *
+from data import feature
 from metrics import *
+import os
 
 
 def train(train=True):
-    raw_data = np.load("../data/train_curated_np.npz")
+    if not os.path.exists("logs"):
+        os.mkdir("logs")
+    if not os.path.exists("../result"):
+        os.mkdir("../result")
+    if not os.path.exists("../model"):
+        os.mkdir("../model")
+
+    raw_data = np.load("../data/" + feature.TRAIN_CURATED_NUMPY_PATH)
     data = raw_data["log_melgram"]  # (25670, 128, 64)
     label = raw_data["labels"]  # (25670, 80)
     config = K.tf.ConfigProto()
@@ -49,7 +53,7 @@ def train(train=True):
         print(model.summary())
         model.compile(loss='categorical_crossentropy',
                       optimizer='adam',
-                      metrics=[tf_lwlrap])
+                      metrics=[tf_wrapped_lwlrap_sklearn])
         model_save_path = '../model/model_weight_raw_cnn_{}.h5'.format(str(i))
         if not train:
             model.load_weights(model_save_path)
@@ -65,9 +69,24 @@ def train(train=True):
                                 shuffle=True,
                                 validation_data=(X_val, X_val_label), callbacks=[ear, checkpoint, tensorboard])
 
-            lwlrap += history.history["val_tf_lwlrap"][-1]
+            lwlrap += history.history["val_tf_wrapped_lwlrap_sklearn"][-1]
         K.clear_session()
     print(lwlrap / 5.0)
+
+
+def test():
+    test_data = np.load("../data/" + feature.TRAIN_CURATED_NUMPY_PATH)
+    data = test_data["log_melgram"]  # (25670, 128, 64)
+    fnames = test_data["fnames"]  # (25670, 80)
+    config = K.tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    session = K.tf.Session(config=config)
+
+    for dirpath, dirnames, filenames in os.walk('../model'):
+        for filename in filenames:
+            model_save_path = os.path.join(dirpath, filename)
+            model = load_model(model_save_path)
+
 
 
 if __name__ == "__main__":

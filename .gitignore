@@ -3,10 +3,17 @@ data/test
 data/test_non_silence
 data/train_curated
 data/train_curated_non_silence
+*.npz
+*.zip
+*.rar
+
+# logs
+src/logs
+src/model
 
 # checkpoints
 model
 
+# temporary file
 *.pyc
-
 .idea
