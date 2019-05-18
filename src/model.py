@@ -4,12 +4,14 @@ from keras.layers import Dense, Embedding, Activation, merge, Input, Lambda, Res
 from keras.layers import Conv1D, Flatten, Dropout, MaxPool1D, GlobalAveragePooling1D, concatenate, AveragePooling1D, \
     ConvLSTM2D, BatchNormalization, MaxPool2D
 from keras.regularizers import l1, l2, l1_l2
+from keras.optimizers import Adam, SGD
 from keras import backend as K
 import sys
 sys.path.append('..')
 
 from data import feature
 from metrics import *
+
 
 def simple_cnn():
     main_input = Input(shape=(feature.img_height, feature.img_width))
@@ -28,22 +30,29 @@ def simple_cnn():
 def simple_VGG():
     main_input = Input(shape=(feature.img_height, feature.img_width))
     expanded_input = Lambda(lambda x: K.expand_dims(x, -1))(main_input)
-    expanded_input = BatchNormalization()(expanded_input)
 
-    conv = Conv2D(64, 3, padding='same', activation="relu")(expanded_input)
-    conv = Conv2D(64, 3, padding='same', activation="relu")(conv)
+    conv = Conv2D(32, 3, padding='same')(expanded_input)
+    conv = Activation('relu')(conv)
+    conv = Conv2D(32, 3, padding='same')(conv)
+    conv = Activation('relu')(conv)
 
     pool_1 = MaxPool2D(2, padding='same')(conv)
 
-    conv = Conv2D(128, 3, padding='same', activation="relu")(pool_1)
-    conv = Conv2D(128, 3, padding='same', activation="relu")(conv)
+    conv = Conv2D(64, 3, padding='same')(pool_1)
+    conv = Activation('relu')(conv)
+    conv = Conv2D(64, 3, padding='same')(conv)
+    conv = Activation('relu')(conv)
 
     pool_2 = MaxPool2D(2, padding='same')(conv)
 
     flatten = Flatten()(pool_2)
-    fc = Dense(1024, activation='relu',
-               kernel_regularizer=l1_l2(),
-               bias_regularizer=l1_l2()
+    fc = Dense(128, activation='relu',
+               kernel_regularizer=l2(),
+               bias_regularizer=l2()
+               )(flatten)
+    fc = Dense(512, activation='relu',
+               kernel_regularizer=l2(),
+               bias_regularizer=l2()
                )(flatten)
     fc = Dropout(0.5)(fc)
 
@@ -51,7 +60,8 @@ def simple_VGG():
     main_output = Dropout(0.5)(main_output)
 
     model = Model(inputs=main_input, outputs=main_output)
+    optimizer = Adam(lr=1e-4)
     model.compile(loss='categorical_crossentropy',
-                  optimizer='adam',
+                  optimizer=optimizer,
                   metrics=[tf_wrapped_lwlrap_sklearn])
     return model

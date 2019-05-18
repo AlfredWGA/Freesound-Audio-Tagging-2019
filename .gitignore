@@ -8,8 +8,8 @@ data/train_curated_non_silence
 *.rar
 
 # logs
-src/logs
-src/model
+logs
+model
 
 # checkpoints
 model
