@@ -130,3 +130,4 @@ checkpoints/
 *.rar
 *.npz
 *.zip
+*.csv
