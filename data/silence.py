@@ -1,11 +1,12 @@
 import os.path
 import librosa
 import numpy as np
-import feature
 from pydub import AudioSegment
 import pydub.silence as silence
 from pydub.exceptions import CouldntDecodeError
 import os
+import feature
+from tqdm import tqdm
 
 
 def split_audio(dataset_path,
@@ -42,12 +43,21 @@ def split_audio(dataset_path,
         os.makedirs(output_path)
 
     def _export_segments(segments):
+        # fnames = []
+        # for i, seg in enumerate(segments):
+        #     fname = '{}_{}.wav'.format(os.path.splitext(file_name)[0], i)
+        #     seg.export(os.path.join(output_path, fname), format='wav')
+        #     fnames.append(fname)
+        # return fnames
+
         fnames = []
+        new_sound = AudioSegment.empty()
         for i, seg in enumerate(segments):
-            fname = '{}_{}.wav'.format(os.path.splitext(file_name)[0], i)
-            seg.export(os.path.join(output_path, fname), format='wav')
-            fnames.append(fname)
+            new_sound += seg
+        # fname = '{}.wav'.format(os.path.splitext(file_name)[0], i)
+        fnames.append(fname)
         return fnames
+
 
     try:
         x = AudioSegment.from_wav(os.path.join(dataset_path, file_name))
@@ -129,6 +139,6 @@ def _moving_average(x, n=3):
 
 
 if __name__ == '__main__':
-    for dirpath, dirnames, filenames in os.walk(feature.TEST_DIR):
-        for fname in filenames:
-            print(split_audio(dirpath, fname, feature.TEST_NON_SILENCE_DIR))
+    for dirpath, dirnames, filenames in os.walk(feature.TRAIN_CURATED_DIR):
+        for fname in tqdm(filenames):
+            print(split_audio(dirpath, fname, feature.TRAIN_CURATED_NON_SILENCE_DIR))

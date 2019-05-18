@@ -1,7 +1,6 @@
 # coding=utf-8
 import librosa
 import tensorflow as tf
-from tensorflow.data import TextLineDataset
 import PIL.Image as Image
 import numpy as np
 import librosa.display
@@ -354,9 +353,9 @@ class LogmelExtractor(object):
 
 
 if __name__ == '__main__':
-    extractor = LogmelExtractor(sample_rate=32000, n_window=1024, hop_length=512, n_mels=64)
-    convert_wav_to_fixed_length_melgram_npz(TEST_NON_SILENCE_DIR, TEST_NUMPY_PATH, extractor, testing=True)
-    data = np.load(TEST_NUMPY_PATH)
-    for item in data.items():
-        print(item[1].shape)
-    pass
+    show_duration_distribution(TRAIN_CURATED_NON_SILENCE_DIR)
+    # extractor = LogmelExtractor(sample_rate=32000, n_window=1024, hop_length=512, n_mels=64)
+    # convert_wav_to_fixed_length_melgram_npz(TEST_NON_SILENCE_DIR, TEST_NUMPY_PATH, extractor, testing=True)
+    # data = np.load(TEST_NUMPY_PATH)
+    # for item in data.items():
+    #     print(item[1].shape)
