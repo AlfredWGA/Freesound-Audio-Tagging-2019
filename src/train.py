@@ -15,7 +15,6 @@ import csv
 from sklearn.model_selection import StratifiedKFold
 from model import *
 from data import feature
-from metrics import *
 import os
 
 
@@ -51,10 +50,7 @@ def train(train=True):
         X_val, X_val_label = data[te_ind], label[te_ind]
         model = simple_cnn()
         print(model.summary())
-        model.compile(loss='categorical_crossentropy',
-                      optimizer='adam',
-                      metrics=[tf_wrapped_lwlrap_sklearn])
-        model_save_path = '../model/model_weight_raw_cnn_{}.h5'.format(str(i))
+        model_save_path = '../model/model_cnn_{}.h5'.format(str(i))
         if not train:
             model.load_weights(model_save_path)
             print(model.evaluate(X_val, X_val_label))
@@ -86,7 +82,6 @@ def test():
         for filename in filenames:
             model_save_path = os.path.join(dirpath, filename)
             model = load_model(model_save_path)
-
 
 
 if __name__ == "__main__":
