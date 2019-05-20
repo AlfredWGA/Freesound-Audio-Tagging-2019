@@ -13,14 +13,12 @@ from tqdm import tqdm
 
 TRAIN_CURATED_DIR = 'train_curated'
 TRAIN_CURATED_NON_SILENCE_DIR = TRAIN_CURATED_DIR + '_non_silence'
-# TRAIN_CURATED_IMAGE_DIR = TRAIN_CURATED_DIR + '_image'
 
 TRAIN_CURATED_LABEL_PATH = 'train_curated.csv'
-# TRAIN_CURATED_IMAGE_LABEL_PATH = 'train_curated_image.csv'
 TRAIN_CURATED_NUMPY_PATH = 'train_curated_np.npz'
 TRAIN_CURATED_TRUNCATED_PATH = 'train_curated_truncated.csv'
 
-TRAIN_CURATED_NON_SILENT_SIZE = 25670
+TRAIN_CURATED_NON_SILENT_SIZE = 7942
 
 TEST_DIR = 'test'
 TEST_NON_SILENCE_DIR = TEST_DIR + '_non_silence'
@@ -49,7 +47,7 @@ class_num = len(classes)
 class2id = dict(zip(classes, range(class_num)))
 
 
-def show_duration_distribution(path):
+def show_duration_distribution(path, ratio):
     """
     展示所有样本的时长分布
 
@@ -59,8 +57,8 @@ def show_duration_distribution(path):
     durations = []
     for dirpath, dirnames, filenames in os.walk(path):
         for filename in filenames:
-            path = os.path.join(dirpath, filename)
-            y, sr = librosa.load(path, sr=None)
+            file_path = os.path.join(dirpath, filename)
+            y, sr = librosa.load(file_path, sr=None)
             durations.append(y.shape[0]/sr)
 
     plt.hist(durations, bins='auto', edgecolor='black')
@@ -68,6 +66,12 @@ def show_duration_distribution(path):
     plt.xlabel('Duration')
     plt.ylabel('Number')
     plt.show()
+
+    durations = sorted(durations)
+    index = int(len(durations)*ratio)
+    print('The {} percentile is {}\'s'.format(ratio, durations[index]))
+    # 80%分位数为12.8s
+    # 70%为8.52s
 
 
 def pad_truncate(x, length, pad_value=0):
@@ -134,6 +138,7 @@ def truncate_features(vector, n_mel=64, chunk_size=128, r_threshold=32):
 
     return np.array(chunks), n_chunks
 
+
 '''
 def convert_wav_to_fixed_length_melgram_image(wav_dir, output_dir, extractor):
     """
@@ -180,7 +185,8 @@ def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_path, extractor, tes
     :param wav_dir: The dir containing all the .wav files.
     :param output_path: Output path for .npz file.
     :param extractor: Instance of LogmelExtractor
-    :return:
+    :return: 若testing=True，返回fnames和log-melgram的两个数组
+    若False，返回labels和log-melgram
     """
     # 读取标签，转换成{fname, label}的键值对
     if not testing:
@@ -197,20 +203,22 @@ def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_path, extractor, tes
     for dirpath, dirnames, filenames in os.walk(wav_dir):
         for fname in tqdm(filenames):
             x, sr = librosa.load(os.path.join(dirpath, fname), sr=None)
-            melgram = extractor.extract(x)
-            melgram = normalize(melgram)
+            melgram = extractor.extract(x, sample_rate=sr)
+            # melgram = normalize(melgram)
             # TODO: 加入delta信息，样本形状为[height, width, 2]
-            chunks, n_chunk = truncate_features(melgram, n_mel=extractor.n_mels)
+            chunks, n_chunk = truncate_features(melgram, n_mel=extractor.n_mels, chunk_size=img_height)
             for i, chunk in enumerate(chunks):
+                feature_vectors.append(chunk)
                 if not testing:
                     # 处理多个标签的情况
-                    label = fname2label[fname[:8] + '.wav'].split(',')
+                    label = fname2label[fname].split(',')
                     one_hot_label = to_one_hot(label)
                     labels.append(one_hot_label)
+                    if i == 1:
+                        break
                 else:
                     chunk_name = '{}_{}.wav'.format(fname[:-4], i)
                     fnames.append(chunk_name)
-                feature_vectors.append(chunk)
 
     feature_vectors = np.stack(feature_vectors)
     if not testing:
@@ -273,7 +281,6 @@ def to_one_hot(labels):
     return one_hot_label
 
 
-
 def count_lines(path):
     with open(path, 'r', encoding='utf-8') as f:
         count = 0
@@ -330,17 +337,16 @@ class LogmelExtractor(object):
         n_frames = n_samples // self.hop_length + 1
         return n_frames, self.mel_fb.shape[0]
 
-    def extract(self, x, sample_rate=None):
+    def extract(self, x, sample_rate):
         """Transform the given signal into a logmel feature vector.
         Args:
             x (np.ndarray): Input time-series signal.
-            sample_rate (number): New sampling rate of signal.
+            sample_rate (number): Sampling rate of signal.
         Returns:
             np.ndarray: The logmel feature vector.
         """
         # Resample to target sampling rate
-        if sample_rate is not None:
-            x = librosa.resample(x, sample_rate, self.sample_rate)
+        x = librosa.resample(x, sample_rate, self.sample_rate)
 
         # Compute short-time Fourier transform
         D = librosa.stft(x, n_fft=self.n_window, hop_length=self.hop_length)
@@ -352,8 +358,6 @@ class LogmelExtractor(object):
 
 if __name__ == '__main__':
     extractor = LogmelExtractor(sample_rate=32000, n_window=1024, hop_length=512, n_mels=64)
-    convert_wav_to_fixed_length_melgram_npz(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_NUMPY_PATH, extractor)
-    # data = np.load(TEST_NUMPY_PATH)
-    # for item in data.items():
-    #     print(item)
-    # pass
+    # convert_wav_to_fixed_length_melgram_npz(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_NUMPY_PATH, extractor)
+    data = np.load(TRAIN_CURATED_NUMPY_PATH)
+    pass

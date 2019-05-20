@@ -4,7 +4,6 @@ import matplotlib.mlab as mlab
 from keras.callbacks import TensorBoard, EarlyStopping, ModelCheckpoint
 from keras.utils import to_categorical
 import time
-from sklearn import metrics
 from keras import backend as K
 from keras.models import load_model
 import csv
@@ -12,7 +11,7 @@ from sklearn.model_selection import StratifiedKFold
 from model import *
 from data import feature
 import os
-from collections import defaultdict
+from metrics import tf_wrapped_lwlrap_sklearn
 
 
 def train(train=True):
@@ -24,7 +23,7 @@ def train(train=True):
         os.mkdir("../model")
 
     raw_data = np.load("../data/" + feature.TRAIN_CURATED_NUMPY_PATH)
-    data = raw_data["log_melgram"]  # (25670, 128, 64)
+    data = raw_data["log_melgram"]  # (25670, 720, 64)
     label = raw_data["labels"]  # (25670, 80)
     config = K.tf.ConfigProto()
     config.gpu_options.allow_growth = True
@@ -42,17 +41,17 @@ def train(train=True):
     lwlrap = 0
     for i, (tr_ind, te_ind) in enumerate(skf.split(data, y)):
         print('FOLD: {}'.format(str(i)))
-        print(len(te_ind), len(tr_ind))
+        print('Training: {}, validation: {}'.format(len(tr_ind), len(te_ind)))
         X_train, X_train_label = data[tr_ind], label[tr_ind]
         X_val, X_val_label = data[te_ind], label[te_ind]
         model = simple_VGG()
         print(model.summary())
         model_save_path = '../model/model_cnn_{}.h5'.format(str(i))
         if not train:
-            model.load_weights(model_save_path)
+            model = load_model(model_save_path, {'tf_wrapped_lwlrap_sklearn': tf_wrapped_lwlrap_sklearn})
             print(model.evaluate(X_val, X_val_label))
         else:
-            ear = EarlyStopping(monitor='val_loss', min_delta=0, patience=4, verbose=0, mode='min', baseline=None,
+            ear = EarlyStopping(monitor='val_loss', min_delta=0, patience=5, verbose=0, mode='min', baseline=None,
                                 restore_best_weights=True)
             checkpoint = ModelCheckpoint(model_save_path, save_best_only=True, save_weights_only=False)
             history = model.fit(X_train, X_train_label,
@@ -75,22 +74,21 @@ def test():
     session = K.tf.Session(config=config)
 
     # scores给每个模型开一个dict，key是fname，value是[score，times]的二元组
-    scores = [{}] * 5
+    scores = [{} for x in range(5)]
     model = simple_VGG()
 
-    for score in scores:
-        for dirpath, dirnames, filenames in os.walk('../model'):
-            for i in range(len(filenames)):
-                model_save_path = os.path.join(dirpath, filenames[i])
-                model.load_weights(model_save_path)
-                pred = model.predict(data)
+    for dirpath, dirnames, filenames in os.walk('../model'):
+        for i in range(len(filenames)):
+            model_save_path = os.path.join(dirpath, filenames[i])
+            model.load_weights(model_save_path)
+            pred = model.predict(data)
 
-                for i in range(len(fnames)):
-                    fname = fnames[i][:8] + '.wav'
-                    if fname not in score:
-                        score[fname] = [np.zeros(shape=[feature.class_num]), 0]
-                    score[fname][0] += pred[i]
-                    score[fname][1] += 1
+            for j in range(len(fnames)):
+                fname = fnames[j][:8] + '.wav'
+                if fname not in scores[i]:
+                    scores[i][fname] = [np.zeros(shape=[feature.class_num]), 0]
+                scores[i][fname][0] += pred[j]
+                scores[i][fname][1] += 1
 
     # key是fname，value是score
     final_scores = {}
@@ -118,6 +116,7 @@ def test():
 
     sf.close()
     wf.close()
+
 
 if __name__ == "__main__":
     train(train=True)
