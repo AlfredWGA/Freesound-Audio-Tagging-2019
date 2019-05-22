@@ -116,9 +116,12 @@ dmypy.json
 # dataset
 data/train_curated/
 data/train_curated_non_silence/
-data/train_curated_image/
+data/train_curated_np/
 data/test/
 data/test_non_silence/
+data/train_noisy
+data/train_noisy_non_silence
+data/train_noisy_np
 
 model/
 logs/

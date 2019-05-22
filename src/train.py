@@ -7,11 +7,13 @@ import time
 from keras import backend as K
 from keras.models import load_model
 import csv
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, KFold
 from model import *
 from data import feature
 import os
 from metrics import tf_wrapped_lwlrap_sklearn
+import utils
+from keras.utils import plot_model
 
 
 def train(train=True):
@@ -22,9 +24,9 @@ def train(train=True):
     if not os.path.exists("../model"):
         os.mkdir("../model")
 
-    raw_data = np.load("../data/" + feature.TRAIN_CURATED_NUMPY_PATH)
-    data = raw_data["log_melgram"]  # (25670, 720, 64)
-    label = raw_data["labels"]  # (25670, 80)
+    # raw_data = np.load("../data/" + feature.TRAIN_CURATED_NUMPY_PATH)
+    # data = raw_data["log_melgram"]  # (25670, 720, 64)
+    # label = raw_data["labels"]  # (25670, 80)
     config = K.tf.ConfigProto()
     config.gpu_options.allow_growth = True
     session = K.tf.Session(config=config)
@@ -36,30 +38,46 @@ def train(train=True):
 
     # meta_train = np.zeros(shape=(len(data), 80))
     # meta_test = np.zeros(shape=(len(label), 80))
-    y = np.zeros((len(label), 1))
-    skf = StratifiedKFold(n_splits=5, random_state=4, shuffle=True)
-    lwlrap = 0
-    for i, (tr_ind, te_ind) in enumerate(skf.split(data, y)):
+    # y = np.zeros((len(label), 1))
+    # skf = StratifiedKFold(n_splits=5, random_state=4, shuffle=True)
+    kf = KFold(n_splits=5, shuffle=True)
+    fname_list = utils.load_fnames('../data/' + feature.TRAIN_NUMPY_DIR)
+    lwlrap = 0.0
+
+    for i, (tr_ind, te_ind) in enumerate(kf.split(fname_list)):
         print('FOLD: {}'.format(str(i)))
+        train_size = len(tr_ind)
+        test_size = len(te_ind)
         print('Training: {}, validation: {}'.format(len(tr_ind), len(te_ind)))
-        X_train, X_train_label = data[tr_ind], label[tr_ind]
-        X_val, X_val_label = data[te_ind], label[te_ind]
-        model = simple_VGG()
+        fname_train = fname_list[tr_ind]
+        fname_test = fname_list[te_ind]
+        batch_size = 128
+        batch_train = utils.generate_arrays_from_file(fname_train, batch_size, shuffle=False)
+        batch_test = utils.generate_arrays_from_file(fname_test, batch_size, shuffle=False)
+
+        model = simple_Inception()
         print(model.summary())
         model_save_path = '../model/model_cnn_{}.h5'.format(str(i))
+
         if not train:
-            model = load_model(model_save_path, {'tf_wrapped_lwlrap_sklearn': tf_wrapped_lwlrap_sklearn})
-            print(model.evaluate(X_val, X_val_label))
+            # model = load_model(model_save_path, {'tf_wrapped_lwlrap_sklearn': tf_wrapped_lwlrap_sklearn})
+            # print(model.evaluate(X_val, X_val_label))
+            pass
         else:
             ear = EarlyStopping(monitor='val_loss', min_delta=0, patience=5, verbose=0, mode='min', baseline=None,
                                 restore_best_weights=True)
             checkpoint = ModelCheckpoint(model_save_path, save_best_only=True, save_weights_only=False)
-            history = model.fit(X_train, X_train_label,
-                                batch_size=128,
-                                epochs=100,
-                                shuffle=True,
-                                validation_data=(X_val, X_val_label), callbacks=[ear, checkpoint, tensorboard])
-
+            # history = model.fit(X_train, X_train_label,
+            #                     batch_size=128,
+            #                     epochs=100,
+            #                     shuffle=True,
+            #                     validation_data=(X_val, X_val_label), callbacks=[ear, checkpoint, tensorboard])
+            history = model.fit_generator(batch_train,
+                                          steps_per_epoch=train_size//batch_size,
+                                          epochs=100,
+                                          callbacks=[ear, checkpoint, tensorboard],
+                                          validation_data=batch_test,
+                                          validation_steps=test_size//batch_size)
             lwlrap += history.history["val_tf_wrapped_lwlrap_sklearn"][-1]
         K.clear_session()
     print(lwlrap / 5.0)

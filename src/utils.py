@@ -1,19 +1,20 @@
 import numpy as np
 import os
+from data import feature
 
 
-def load_file(datapath):
+def load_fnames(datapath):
     data = []
     for root, path, file_names in os.walk(datapath):
         for filename in file_names:
             data.append(os.path.join(root, filename))
-    return data
+    return np.asarray(data)
 
 
-def process_from_file(data_list):
+def process_from_file(file_list):
     x = []
     y = []
-    for file in data_list:
+    for file in file_list:
         f = np.load(file)
         x.append(f["log_melgram"])
         y.append(f["labels"])
@@ -36,14 +37,19 @@ yy: the ground truth of the data. shape:(batch_size, data_shape)
 '''
 
 
-def generate_arrays_from_file(data_path, batch_size=64, shuffle=True):
-    data, label = load_file(data_path)
-    idx = np.arange(len(data))
+def generate_arrays_from_file(fname_list, batch_size=64, shuffle=True):
+    idx = np.arange(len(fname_list))
     if shuffle:
         np.random.shuffle(idx)
-    batches = [idx[range(batch_size * i, min(len(data), batch_size * (i + 1)))] for i in
-               range(len(data) // batch_size + 1)]
+    batches = [idx[range(batch_size * i, min(len(fname_list), batch_size * (i + 1)))] for i in
+               range(len(fname_list) // batch_size + 1)]
     while True:
         for i in batches:
-            xx, yy = process_from_file(data[i])
+            xx, yy = process_from_file(fname_list[i])
             yield (xx, yy)
+
+
+if __name__ == '__main__':
+    fname_list = load_fnames('../data/' + feature.TRAIN_NUMPY_DIR)
+    batch = generate_arrays_from_file(fname_list)
+    print(next(batch))

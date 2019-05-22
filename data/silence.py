@@ -5,8 +5,8 @@ from pydub import AudioSegment
 import pydub.silence as silence
 from pydub.exceptions import CouldntDecodeError
 import os
-import feature
 from tqdm import tqdm
+import feature
 
 
 def split_audio(dataset_path,
@@ -54,7 +54,7 @@ def split_audio(dataset_path,
         new_sound = AudioSegment.empty()
         for i, seg in enumerate(segments):
             new_sound += seg
-        # fname = '{}.wav'.format(os.path.splitext(file_name)[0], i)
+        new_sound.export(os.path.join(output_path, fname), format='wav')
         fnames.append(fname)
         return fnames
 
@@ -139,6 +139,7 @@ def _moving_average(x, n=3):
 
 
 if __name__ == '__main__':
-    for dirpath, dirnames, filenames in os.walk(feature.TRAIN_CURATED_DIR):
+    for dirpath, dirnames, filenames in os.walk(feature.TEST_DIR):
         for fname in tqdm(filenames):
-            print(split_audio(dirpath, fname, feature.TRAIN_CURATED_NON_SILENCE_DIR))
+            print(split_audio(dirpath, fname, feature.TEST_NON_SILENCE_DIR))
+

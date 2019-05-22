@@ -1,28 +1,39 @@
 # coding=utf-8
 import librosa
-import tensorflow as tf
-from tensorflow.data import TextLineDataset
-import PIL.Image as Image
+import shutil
 import numpy as np
 import librosa.display
 import matplotlib.pyplot as plt
 import os
 import csv
 from sklearn.preprocessing import normalize
+from sklearn.model_selection import StratifiedKFold
 from tqdm import tqdm
 
 TRAIN_CURATED_DIR = 'train_curated'
 TRAIN_CURATED_NON_SILENCE_DIR = TRAIN_CURATED_DIR + '_non_silence'
 
+TRAIN_NOISY_ALL_DIR = 'train_noisy_all'
+TRAIN_NOISY_DIR = 'train_noisy'
+TRAIN_NOISY_NON_SILENCE_DIR = TRAIN_NOISY_DIR + '_non_silence'
+
 TRAIN_CURATED_LABEL_PATH = 'train_curated.csv'
-TRAIN_CURATED_NUMPY_PATH = 'train_curated_np.npz'
-TRAIN_CURATED_TRUNCATED_PATH = 'train_curated_truncated.csv'
+# TRAIN_CURATED_NUMPY_PATH = 'train_curated_np.npz'
+TRAIN_CURATED_NUMPY_DIR = 'train_curated_np'
+
+TRAIN_NOISY_LABEL_PATH = 'train_noisy.csv'
+# TRAIN_NOISY_NUMPY_PATH = 'train_noisy_np.npz'
+TRAIN_NOISY_NUMPY_DIR = 'train_noisy_np'
+
+TRAIN_NUMPY_DIR = 'train'
 
 TRAIN_CURATED_NON_SILENT_SIZE = 7942
+TRAIN_NOISY_NON_SILENCE_SIZE = 5055
+TRAIN_SIZE = 57310
 
 TEST_DIR = 'test'
 TEST_NON_SILENCE_DIR = TEST_DIR + '_non_silence'
-TEST_NUMPY_PATH = 'test_np.npz'
+TEST_NUMPY_PATH = 'test_np'
 
 SAMPLE_PATH = 'sample_submission.csv'
 
@@ -178,23 +189,26 @@ def convert_wav_to_fixed_length_melgram_image(wav_dir, output_dir, extractor):
 '''
 
 
-def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_path, extractor, testing=False):
+def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_dir, label_path, extractor):
     """
     把所有的.wav文件转换为定长的log-melgram数组，将数组和one hot标签存入.npz
 
     :param wav_dir: The dir containing all the .wav files.
     :param output_path: Output path for .npz file.
+    :param label_path: .csv file containing fnames and labels
     :param extractor: Instance of LogmelExtractor
     :return: 若testing=True，返回fnames和log-melgram的两个数组
     若False，返回labels和log-melgram
     """
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+
     # 读取标签，转换成{fname, label}的键值对
-    if not testing:
-        fname2label = {}
-        with open(TRAIN_CURATED_LABEL_PATH, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                fname2label[row['fname']] = row['labels']
+    fname2label = {}
+    with open(label_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            fname2label[row['fname']] = row['labels']
 
     feature_vectors = []
     labels = []
@@ -208,64 +222,90 @@ def convert_wav_to_fixed_length_melgram_npz(wav_dir, output_path, extractor, tes
             # TODO: 加入delta信息，样本形状为[height, width, 2]
             chunks, n_chunk = truncate_features(melgram, n_mel=extractor.n_mels, chunk_size=img_height)
             for i, chunk in enumerate(chunks):
-                feature_vectors.append(chunk)
-                if not testing:
-                    # 处理多个标签的情况
-                    label = fname2label[fname].split(',')
-                    one_hot_label = to_one_hot(label)
-                    labels.append(one_hot_label)
-                    if i == 1:
-                        break
-                else:
-                    chunk_name = '{}_{}.wav'.format(fname[:-4], i)
-                    fnames.append(chunk_name)
+                # feature_vectors.append(chunk)
+                # 处理多个标签的情况
+                label = fname2label[fname].split(',')
+                one_hot_label = to_one_hot(label)
+                chunk_name = '{}_{}'.format(fname[:-4], i)
+                output_path = os.path.join(output_dir, chunk_name)
+                np.savez(output_path, labels=one_hot_label, log_melgram=chunk)
+                # labels.append(one_hot_label)
+                # fnames.append(chunk_name)
 
-    feature_vectors = np.stack(feature_vectors)
-    if not testing:
-        labels = np.stack(labels)
-        # 训练集的.npz保存为labels和log_melgram的数组
-        np.savez(output_path, labels=labels, log_melgram=feature_vectors)
-    else:
-        fnames = np.stack(fnames)
-        # 测试集的.npz保存为fnames和log_melgram的数组
-        np.savez(output_path, fnames=fnames, log_melgram=feature_vectors)
-    print('Save numpy arrays to {}'.format(output_path))
+    print('Save numpy arrays to {}'.format(output_dir))
 
-'''
-def generate_one_hot_label_csv(data_dir, csv_path):
+
+def convert_test_wav_to_fixed_length_melgram_npz(wav_dir, output_dir, extractor):
     """
-    把数据的文件名及标签转为[fname, label]的csv文件
+    把测试集的.wav文件转换为定长的log-melgram数组和fname，存入.npz
 
-    :param image_dir: 包含.wav文件的文件夹
-    :param csv_path: .csv文件的输出路径
+    :param wav_dir: The dir containing all the .wav files.
+    :param output_path: Output path for .npz file.
+    :param extractor: Instance of LogmelExtractor
+    """
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+
+    for dirpath, dirnames, filenames in os.walk(wav_dir):
+        for fname in tqdm(filenames):
+            x, sr = librosa.load(os.path.join(dirpath, fname), sr=None)
+            melgram = extractor.extract(x, sample_rate=sr)
+            # melgram = normalize(melgram)
+            # TODO: 加入delta信息，样本形状为[height, width, 2]
+            chunks, n_chunk = truncate_features(melgram, n_mel=extractor.n_mels, chunk_size=img_height)
+            for i, chunk in enumerate(chunks):
+                chunk_name = '{}_{}'.format(fname[:-4], i)
+                output_path = os.path.join(output_dir, chunk_name)
+                np.savez(output_path, fname=chunk_name, log_melgram=chunk)
+
+    print('Save numpy arrays to {}'.format(output_dir))
+
+
+def pick_out_files(wav_dir, output_dir, k_fold):
+    """
+    给train_noisy分层提取出1/k_fold个样本
+
+    :param wav_dir:
+    :param output_dir:
+    :param k_fold:
     :return:
     """
-    # 读取标签，转换成{fname, label}的键值对
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+    fnames = []
+    labels = []
     fname2label = {}
-    with open(TRAIN_CURATED_LABEL_PATH, 'r', encoding='utf-8') as f:
-        f.readline()  # 跳过标题
-        while True:
-            line = f.readline()
-            if line == '':
-                break
-            line = line.strip()
-            fname = line[:12]
-            label = line[13:].strip("\"")
-            fname2label[fname] = label
 
-    f = open(csv_path, 'w', encoding='utf-8', newline='')
+    with open('train_noisy_all.csv', 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            fnames.append(row['fname'])
+            labels.append(row['labels'])
+            fname2label[row['fname']] = row['labels']
+
+    skf = StratifiedKFold(n_splits=k_fold, shuffle=True)
+
+    indices = skf.split(fnames, labels)
+    fnames = np.asarray(fnames)
+    labels = np.asarray(labels)
+
+    # 只取一个fold
+    train_indices, valid_indices = next(indices)
+    fnames, labels = fnames[valid_indices], labels[valid_indices]
+
+    for (fname, label) in tqdm(list(zip(fnames, labels))):
+        file_path = os.path.join(wav_dir, fname)
+        shutil.copy(file_path, output_dir)
+
+    # 生成fname, labels文件
+    f = open(TRAIN_NOISY_LABEL_PATH, 'w', newline='')
     writer = csv.writer(f)
-    writer.writerow(['fname']+classes)
-    for dirpath, dirnames, filenames in os.walk(data_dir):
+    writer.writerow(['fname', 'labels'])
+    for dirpath, dirnames, filenames in os.walk(output_dir):
         for fname in tqdm(filenames):
-            labels = fname2label[fname[:8] + '.wav'].strip('\"').split(',')
-            # 转成one hot标签
-            one_hot_label = to_one_hot(labels)
-            row = [fname] + list(one_hot_label.tolist())
-            writer.writerow(row)
+            writer.writerow([fname, fname2label[fname]])
     f.close()
-
-'''
+    return
 
 
 def to_one_hot(labels):
@@ -358,6 +398,8 @@ class LogmelExtractor(object):
 
 if __name__ == '__main__':
     extractor = LogmelExtractor(sample_rate=32000, n_window=1024, hop_length=512, n_mels=64)
-    # convert_wav_to_fixed_length_melgram_npz(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_NUMPY_PATH, extractor)
-    data = np.load(TRAIN_CURATED_NUMPY_PATH)
-    pass
+    convert_wav_to_fixed_length_melgram_npz(TRAIN_CURATED_NON_SILENCE_DIR, TRAIN_CURATED_NUMPY_DIR,
+    TRAIN_CURATED_LABEL_PATH, extractor)
+    # convert_test_wav_to_fixed_length_melgram_npz(TEST_NON_SILENCE_DIR, TEST_NUMPY_PATH, extractor)
+    # pick_out_files(TRAIN_NOISY_ALL_DIR, TRAIN_NOISY_DIR, 4)
+
