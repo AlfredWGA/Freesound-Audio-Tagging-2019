@@ -1,4 +1,5 @@
 import numpy as np
+from keras.backend.tensorflow_backend import set_session
 import matplotlib.pyplot as plt
 import matplotlib.mlab as mlab
 from keras.callbacks import TensorBoard, EarlyStopping, ModelCheckpoint
@@ -9,14 +10,21 @@ from keras.models import load_model
 import csv
 from sklearn.model_selection import StratifiedKFold, KFold
 from model import *
-from data import feature
 import os
 from metrics import tf_wrapped_lwlrap_sklearn
-import utils
+from utils import *
 from keras.utils import plot_model
+from data import feature
+import pandas as pd
+from tqdm import tqdm
 
 
-def train(train=True):
+models = {'simple_vgg': simple_vgg, 'simple_inception': simple_inception,
+          'simple_crnn': simple_crnn, 'xception': xception,
+          'inceptionv3': inceptionv3}
+
+
+def train(model_type):
     if not os.path.exists("../logs"):
         os.mkdir("../logs")
     if not os.path.exists("../result"):
@@ -24,24 +32,21 @@ def train(train=True):
     if not os.path.exists("../model"):
         os.mkdir("../model")
 
-    # raw_data = np.load("../data/" + feature.TRAIN_CURATED_NUMPY_PATH)
-    # data = raw_data["log_melgram"]  # (25670, 720, 64)
-    # label = raw_data["labels"]  # (25670, 80)
     config = K.tf.ConfigProto()
     config.gpu_options.allow_growth = True
     session = K.tf.Session(config=config)
+    set_session(session)
 
     Fname = 'Audio_'
     Time = Fname + str(time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime()))
     tensorboard = TensorBoard(log_dir='../logs/' + Time, histogram_freq=0, write_graph=False, write_images=False,
                               embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None)
 
-    # meta_train = np.zeros(shape=(len(data), 80))
-    # meta_test = np.zeros(shape=(len(label), 80))
-    # y = np.zeros((len(label), 1))
-    # skf = StratifiedKFold(n_splits=5, random_state=4, shuffle=True)
     kf = KFold(n_splits=5, shuffle=True)
-    fname_list = utils.load_fnames('../data/' + feature.TRAIN_NUMPY_DIR)
+    fname_list = np.concatenate([load_fnames('../data/' + feature.TRAIN_CURATED_NUMPY_DIR),
+                 + load_fnames('../data/' + feature.TRAIN_NOISY_NUMPY_DIR)], axis=0)
+
+    batch_size = 128
     lwlrap = 0.0
 
     for i, (tr_ind, te_ind) in enumerate(kf.split(fname_list)):
@@ -51,13 +56,13 @@ def train(train=True):
         print('Training: {}, validation: {}'.format(len(tr_ind), len(te_ind)))
         fname_train = fname_list[tr_ind]
         fname_test = fname_list[te_ind]
-        batch_size = 128
-        batch_train = utils.generate_arrays_from_file(fname_train, batch_size, shuffle=False)
-        batch_test = utils.generate_arrays_from_file(fname_test, batch_size, shuffle=False)
+        batch_train = generate_arrays_from_file(fname_train, batch_size, shuffle=True)
+        batch_test = generate_arrays_from_file(fname_test, batch_size, shuffle=True)
 
-        model = simple_Inception()
+        model_save_path = '../model/model_{}_{}.h5'.format(model_type,str(i))
+
+        model = models[model_type]()
         print(model.summary())
-        model_save_path = '../model/model_cnn_{}.h5'.format(str(i))
 
         if not train:
             # model = load_model(model_save_path, {'tf_wrapped_lwlrap_sklearn': tf_wrapped_lwlrap_sklearn})
@@ -84,29 +89,31 @@ def train(train=True):
 
 
 def test():
-    test_data = np.load("../data/" + feature.TEST_NUMPY_PATH)
-    data = test_data["log_melgram"]  # (None, 128, 64)
-    fnames = test_data["fnames"]  # (None)
     config = K.tf.ConfigProto()
     config.gpu_options.allow_growth = True
     session = K.tf.Session(config=config)
 
+    fname_list = load_fnames('../data/' + feature.TEST_NUMPY_DIR)
+
     # scores给每个模型开一个dict，key是fname，value是[score，times]的二元组
     scores = [{} for x in range(5)]
-    model = simple_VGG()
 
+    model = xception()
     for dirpath, dirnames, filenames in os.walk('../model'):
         for i in range(len(filenames)):
             model_save_path = os.path.join(dirpath, filenames[i])
             model.load_weights(model_save_path)
-            pred = model.predict(data)
+            for fname in tqdm(fname_list):
+                data = np.load(fname)
+                short_fname = os.path.split(fname)[1]
+                short_fname = short_fname[:8] + '.wav'
+                feature_vector = np.expand_dims(data['log_melgram'], axis=0)
 
-            for j in range(len(fnames)):
-                fname = fnames[j][:8] + '.wav'
+                pred = model.predict(feature_vector)
                 if fname not in scores[i]:
-                    scores[i][fname] = [np.zeros(shape=[feature.class_num]), 0]
-                scores[i][fname][0] += pred[j]
-                scores[i][fname][1] += 1
+                    scores[i][short_fname] = [np.zeros(shape=[feature.class_num]), 0.0]
+                scores[i][short_fname][0] += pred[0]
+                scores[i][short_fname][1] += 1
 
     # key是fname，value是score
     final_scores = {}
@@ -121,21 +128,23 @@ def test():
     for fname in final_scores.keys():
         final_scores[fname] /= 5
 
-    wf = open('submission.csv', 'w', encoding='utf-8', newline='')
-    writer = csv.writer(wf)
-    writer.writerow(['fname'] + feature.classes)
-
+    print(len(final_scores.keys()))
     sf = open('../data/' + feature.SAMPLE_PATH, 'r')
     reader = csv.reader(sf)
-    next(reader)
-    for line in reader:
-        fname = line[0]
-        writer.writerow([fname] + final_scores[fname].tolist())
-
+    header = next(reader)
+    test_fnames = [line[0] for line in reader]
     sf.close()
-    wf.close()
+    print(len(test_fnames))
+
+    for key in test_fnames:
+        if key not in final_scores:
+            print(key)
+
+    result = [[test_fname] + final_scores[test_fname].tolist() for test_fname in test_fnames]
+    submission = pd.DataFrame(result, columns=header)
+    submission.to_csv('submission.csv', index=False)
 
 
 if __name__ == "__main__":
-    train(train=True)
+    train('xception')
     # test()

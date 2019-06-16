@@ -17,7 +17,7 @@ def process_from_file(file_list):
     for file in file_list:
         f = np.load(file)
         x.append(f["log_melgram"])
-        y.append(f["labels"])
+        y.append(f["label"])
     return np.asarray(x), np.asarray(y)
 
 

@@ -139,7 +139,7 @@ def _moving_average(x, n=3):
 
 
 if __name__ == '__main__':
-    for dirpath, dirnames, filenames in os.walk(feature.TEST_DIR):
+    for dirpath, dirnames, filenames in os.walk(feature.TRAIN_NOISY_DIR):
         for fname in tqdm(filenames):
-            print(split_audio(dirpath, fname, feature.TEST_NON_SILENCE_DIR))
+            print(split_audio(dirpath, fname, feature.TRAIN_NOISY_NON_SILENCE_DIR))
 
